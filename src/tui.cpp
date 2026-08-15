@@ -1,6 +1,8 @@
 #include "tui.h"
 
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <iostream>
 #include <string>
 
@@ -130,5 +132,63 @@ void clearLine() {
 }
 
 void newline() { std::cout << "\n"; }
+
+bool isDoubleClicked() {
+#ifdef _WIN32
+    DWORD pids[2] = {0, 0};
+    // Se questo processo è l'unico collegato alla console, è stato avviato
+    // con doppio clic da Explorer (console di proprietà).
+    const DWORD n = GetConsoleProcessList(pids, 2);
+    return n == 1;
+#else
+    return false;
+#endif
+}
+
+bool ensureWindowsTerminal() {
+#ifdef _WIN32
+    // Già dentro Windows Terminal? Non fare nulla.
+    if (std::getenv("WT_SESSION")) return false;
+    // Avviato da cmd/powershell/script oppure senza console? Non toccare nulla.
+    DWORD pids[2] = {0, 0};
+    const DWORD n = GetConsoleProcessList(pids, 2);
+    if (n == 0 || n > 1) return false;
+
+    // Cerca wt.exe nel PATH (app execution alias di Windows Terminal).
+    wchar_t wt[MAX_PATH];
+    if (SearchPathW(nullptr, L"wt.exe", nullptr, MAX_PATH, wt, nullptr) == 0) return false;
+
+    wchar_t dir[MAX_PATH] = {0};
+    GetCurrentDirectoryW(MAX_PATH, dir);
+
+    // Rilancia dentro wt.exe nella stessa directory, con gli stessi argomenti.
+    std::wstring cmd = L"wt.exe -d \"" + std::wstring(dir) + L"\" " + GetCommandLineW();
+
+    STARTUPINFOW si;
+    std::memset(&si, 0, sizeof(si));
+    si.cb = sizeof(si);
+    PROCESS_INFORMATION pi;
+    std::memset(&pi, 0, sizeof(pi));
+
+    if (!CreateProcessW(wt, &cmd[0], nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi))
+        return false;
+
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+    return true;
+#else
+    return false;
+#endif
+}
+
+void pauseIfNeeded() {
+#ifdef _WIN32
+    // Windows Terminal tiene la tab aperta anche a processo terminato.
+    if (std::getenv("WT_SESSION")) return;
+    if (!isDoubleClicked()) return;
+    std::cout << "\nPremi INVIO per chiudere... " << std::flush;
+    std::cin.get();
+#endif
+}
 
 }  // namespace tui

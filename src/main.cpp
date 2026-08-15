@@ -345,36 +345,77 @@ int cmdDownloadModels(const std::vector<std::string>& args) {
     return 0;
 }
 
+int interactiveMenu() {
+    tui::banner();
+    for (;;) {
+        std::cout
+            << "\nScegli un'azione:\n"
+            << "  1) Registra l'audio di sistema (INVIO per fermare)\n"
+            << "  2) Elenca i dispositivi audio\n"
+            << "  3) Scarica i modelli VibeVoice (GGUF)\n"
+            << "  4) Registra + trascrivi + minuta (pipeline completa)\n"
+            << "  5) Esci\n"
+            << "Scelta: " << std::flush;
+        std::string line;
+        std::getline(std::cin, line);
+        if (line == "1") return cmdRecord({});
+        if (line == "2") return cmdList();
+        if (line == "3") return cmdDownloadModels({});
+        if (line == "4") return cmdAll({});
+        if (line == "5" || line.empty()) return 0;
+        tui::warn("Scelta non valida, riprova.");
+    }
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
     tui::init();
+
+    // Doppio clic su Windows: riapri in Windows Terminal (se disponibile).
+    if (tui::ensureWindowsTerminal()) return 0;
+
     std::vector<std::string> args(argv + 1, argv + argc);
+    int rc = 0;
 
     try {
-        if (args.empty() || hasArg(args, "-h") || hasArg(args, "--help")) {
+        if (args.empty() && tui::isDoubleClicked()) {
+            // Doppio clic senza argomenti: menu interattivo.
+            rc = interactiveMenu();
+        } else if (args.empty() || hasArg(args, "-h") || hasArg(args, "--help")) {
             tui::banner();
             usage();
-            return args.empty() ? 1 : 0;
+            rc = args.empty() ? 1 : 0;
+        } else {
+            tui::banner();
+
+            const std::string cmd = args[0];
+            if (cmd == "list")
+                rc = cmdList();
+            else if (cmd == "record")
+                rc = cmdRecord(args);
+            else if (cmd == "transcribe")
+                rc = cmdTranscribe(args);
+            else if (cmd == "minutes")
+                rc = cmdMinutes(args);
+            else if (cmd == "download-models" || cmd == "dl")
+                rc = cmdDownloadModels(args);
+            else if (cmd == "all")
+                rc = cmdAll(args);
+            else {
+                tui::error("Comando sconosciuto: " + cmd);
+                usage();
+                rc = 1;
+            }
         }
-        tui::banner();
-
-        const std::string cmd = args[0];
-        if (cmd == "list") return cmdList();
-        if (cmd == "record") return cmdRecord(args);
-        if (cmd == "transcribe") return cmdTranscribe(args);
-        if (cmd == "minutes") return cmdMinutes(args);
-        if (cmd == "download-models" || cmd == "dl") return cmdDownloadModels(args);
-        if (cmd == "all") return cmdAll(args);
-
-        tui::error("Comando sconosciuto: " + cmd);
-        usage();
-        return 1;
     } catch (const std::exception& e) {
         tui::error(std::string("Errore imprevisto: ") + e.what());
-        return 1;
+        rc = 1;
     } catch (...) {
         tui::error("Errore imprevisto (eccezione sconosciuta).");
-        return 1;
+        rc = 1;
     }
+
+    tui::pauseIfNeeded();
+    return rc;
 }

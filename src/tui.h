@@ -29,4 +29,17 @@ void progress(const std::string& text);          // riga aggiornabile con \r
 void clearLine();
 void newline();
 
+// Su Windows: se il programma è stato avviato con doppio clic (console propria,
+// nessun terminale attorno), attende un INVIO prima di chiudere la finestra.
+// No-op su Linux/macOS e quando lanciato da un terminale o uno script.
+void pauseIfNeeded();
+
+// True su Windows quando avviato con doppio clic da Explorer (console propria).
+bool isDoubleClicked();
+
+// Su Windows: se avviato con doppio clic e Windows Terminal è disponibile,
+// riavvia il programma dentro wt.exe e ritorna true (il chiamante deve uscire).
+// No-op su Linux/macOS e quando già dentro Windows Terminal.
+bool ensureWindowsTerminal();
+
 }  // namespace tui
