@@ -6,6 +6,10 @@ Microsoft Teams, Zoom, Google Meet, ecc.), trascriverlo e generare automaticamen
 
 Funziona su **Windows 10**, **Linux** e **macOS**.
 
+> 📥 **Eseguibili pronti:** scaricali dalla [GitHub Release](https://github.com/euplea/meetingrec/releases)
+> (`meetingrec-windows-x64.exe`, `meetingrec-linux-x64`) — includono il comando
+> `download-models` per scaricare i modelli GGUF di VibeVoice.
+>
 > 📖 **Guida completa:** vedi [MANUALE.md](MANUALE.md) (compilazione, comandi,
 > configurazione, risoluzione problemi).
 

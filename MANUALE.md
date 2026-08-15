@@ -148,6 +148,20 @@ runtime C++/CPU del suo modello speech-to-text **VibeVoice-ASR-BitNet**.
 
 ### Setup automatico
 
+**Alternativa rapida — scarica i modelli GGUF direttamente con l'eseguibile**
+(dalla [GitHub Release](https://github.com/euplea/meetingrec/releases)):
+
+```bash
+meetingrec download-models                 # scarica VAE + LM (~1.7 GB) in vibeasr/models
+meetingrec download-models --vae-only      # solo VAE
+meetingrec download-models --lm-only       # solo LM
+meetingrec download-models --dir miodir    # cartella personalizzata
+```
+
+Il comando mostra il progresso e verifica la dimensione di ogni file.
+
+Oppure, per clonare + compilare anche `asr_infer`:
+
 ```bash
 bash scripts/setup_vibeasr.sh        # Linux/macOS
 scripts\setup_vibeasr.bat            # Windows (git + cmake + MinGW)
