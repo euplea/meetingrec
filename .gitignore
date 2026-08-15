@@ -1,0 +1,15 @@
+# Build
+build/
+build-windows/
+btest/
+*.o
+*.exe
+meetingrec
+
+# Log temporanei di trascrizione
+*.asr.log
+
+# Backup editor
+*~
+*.swp
+.DS_Store
