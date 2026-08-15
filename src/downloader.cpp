@@ -89,7 +89,7 @@ bool downloadFile(const std::string& url, const std::string& dest, uint64_t expe
         return false;
     }
 
-    if (!WinHttpSendRequest(hRequest, WINHTTP_NO_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0) ||
+    if (!WinHttpSendRequest(hRequest, nullptr, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0) ||
         !WinHttpReceiveResponse(hRequest, nullptr)) {
         error = "Richiesta HTTP fallita (0x" + std::to_string(GetLastError()) + ")";
         WinHttpCloseHandle(hRequest);
