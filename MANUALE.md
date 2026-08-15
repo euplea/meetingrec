@@ -1,0 +1,258 @@
+# 📖 MANUALE DI ISTRUZIONI — meetingrec
+
+**meetingrec** registra l'audio riprodotto dal sistema (la voce di Microsoft Teams,
+Zoom, Google Meet, ecc.), lo trascrive e genera automaticamente una **minuta di
+riunione** in Markdown. Funziona su **Windows 10**, **Linux** e **macOS**.
+
+---
+
+## 1. Requisiti
+
+| Piattaforma | Compilatore | Dipendenze |
+|---|---|---|
+| Windows 10 | Visual Studio 2019+ oppure MinGW-w64 | nessuna (WASAPI + WinHTTP nativi) |
+| Linux | g++ 9+ | PortAudio, libcurl, cmake |
+| macOS | clang | PortAudio, libcurl, cmake |
+
+**Hardware consigliato** (per la trascrizione locale con VibeVoice-ASR): 8 GB di RAM
+(minimo 4 GB), ~2 GB di spazio disco per i modelli.
+
+---
+
+## 2. Compilazione
+
+### 2.1 Windows — Visual Studio + vcpkg
+
+```bat
+vcpkg install curl:x64-windows
+cmake -B build -DCMAKE_TOOLCHAIN_FILE=C:\vcpkg\scripts\buildsystems\vcpkg.cmake
+cmake --build build --config Release
+```
+
+Eseguibile: `build\Release\meetingrec.exe` (con icona e manifest incorporati).
+
+### 2.2 Windows — MinGW-w64 (MSYS2)
+
+```bash
+pacman -S mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake
+cmake -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+```
+
+### 2.3 Linux
+
+```bash
+sudo apt-get install -y build-essential portaudio19-dev libasound2-dev libcurl4-openssl-dev pkg-config cmake
+bash scripts/build_linux.sh        # oppure: make  /  cmake -B build && cmake --build build
+```
+
+### 2.4 Cross-compilazione Windows da Linux
+
+```bash
+sudo apt-get install -y g++-mingw-w64-x86-64
+bash scripts/build_windows.sh      # produce build-windows/meetingrec.exe
+```
+
+---
+
+## 3. Avvio rapido
+
+```bash
+# 1) guarda i dispositivi audio
+meetingrec list
+
+# 2) registra l'audio di sistema (su Windows, senza --device, usa il loopback WASAPI)
+meetingrec record --output riunione.wav
+
+# 3) trascrivi (locale con VibeVoice, vedi sezione 5)
+meetingrec transcribe --input riunione.wav --mode vibeasr --output transcript.txt
+
+# 4) genera la minuta
+meetingrec minutes --transcript transcript.txt --title "Sync settimanale" \
+    --attendees "Anna, Mario, Luca" --output minuta.md
+```
+
+Oppure **tutto in un colpo solo**:
+
+```bash
+meetingrec all --duration 3600 --output-dir riunione --title "Sync settimanale"
+```
+
+---
+
+## 4. Comandi
+
+### 4.1 `list`
+
+Elenca i dispositivi audio:
+
+- **Windows**: le voci `[LOOPBACK]` sono le uscite audio (catturano ciò che Teams/Zoom
+  riproducono); le altre sono i microfoni.
+- **Linux**: scegli la voce con `monitor` nel nome (es. `Monitor of Built-in Audio`).
+
+### 4.2 `record`
+
+| Opzione | Default | Descrizione |
+|---|---|---|
+| `--device N` | -1 (default) | Indice dispositivo. Windows senza valore → loopback uscita di sistema |
+| `--output file.wav` | `meeting.wav` | File di destinazione |
+| `--duration SEC` | 0 (fino a INVIO) | Durata massima in secondi |
+| `--rate HZ` | 16000 | Frequenza (Linux); su Windows viene usata quella nativa |
+| `--channels N` | 1 | Canali |
+
+Durante la registrazione: **INVIO** o **Ctrl+C** per fermare.
+
+### 4.3 `transcribe`
+
+| Opzione | Default | Descrizione |
+|---|---|---|
+| `--input file.wav` | — | File audio (richiesto) |
+| `--output file.txt` | `transcript.txt` | File di testo |
+| `--mode` | `openai` | `vibeasr` (locale) / `openai` (multipart) / `raw` (body grezzo) |
+| `--api-url` | OpenAI | Endpoint HTTP |
+| `--api-key` | env | Chiave API |
+| `--model` | `whisper-1` | Modello HTTP |
+| `--language` | — | Lingua (es. `it`) |
+| `--vibeasr-bin` | `asr_infer` | Binario VibeASR.cpp |
+| `--vibeasr-vae` / `--vibeasr-lm` | — | Modelli GGUF |
+| `--vibeasr-threads` | 4 | Thread CPU |
+| `--vibeasr-context` | — | Hotwords |
+| `--vibeasr-format` | `text` | `text` (1.5B) / `json` (7B, relatori+tempi) |
+
+### 4.4 `minutes`
+
+| Opzione | Default | Descrizione |
+|---|---|---|
+| `--transcript file.txt` | — | Trascrizione (richiesto) |
+| `--output file.md` | `minuta.md` | Minuta Markdown |
+| `--title T` | `Minuta riunione` | Titolo |
+| `--attendees A,B` | — | Partecipanti |
+| `--date YYYY-MM-DD` | oggi | Data |
+
+La minuta contiene: **Punti discussi · Decisioni · Azioni/To-do · Rischi/Blocker ·
+Trascrizione integrale** (e **Trascrizione per relatori** se la trascrizione è
+strutturata con orari e relatori).
+
+### 4.5 `all`
+
+Esegue registrazione → trascrizione → minuta. Accetta le opzioni di `record`,
+`transcribe` e `minutes`, più `--output-dir` (default `meeting/`).
+
+---
+
+## 5. Trascrizione locale con VibeVoice-ASR (consigliata)
+
+[VibeVoice](https://github.com/microsoft/VibeVoice) è la famiglia di modelli vocali
+open-source Microsoft; [VibeASR.cpp](https://github.com/microsoft/VibeASR.cpp) è il
+runtime C++/CPU del suo modello speech-to-text **VibeVoice-ASR-BitNet**.
+
+### Setup automatico
+
+```bash
+bash scripts/setup_vibeasr.sh        # Linux/macOS
+scripts\setup_vibeasr.bat            # Windows (git + cmake + MinGW)
+```
+
+Lo script clona VibeASR.cpp, compila `asr_infer` e scarica i modelli GGUF (~1.7 GB):
+
+- `vibeasr-vae-encoder-i8_s.gguf` (703 MB)
+- `vibeasr-lm-i2_s-embed-q6_k.gguf` (993 MB)
+
+### Configurazione
+
+```bash
+export VIBE_VOICE_MODE=vibeasr
+export VIBEASR_BIN="$HOME/vibeasr/build/bin/asr_infer"        # .exe su Windows
+export VIBEASR_VAE_MODEL="$HOME/vibeasr/models/vibeasr-vae-encoder-i8_s.gguf"
+export VIBEASR_LM_MODEL="$HOME/vibeasr/models/vibeasr-lm-i2_s-embed-q6_k.gguf"
+export VIBEASR_THREADS=4
+```
+
+Su Windows: `set VIBE_VOICE_MODE=vibeasr` ecc.
+
+### Hotwords
+
+Migliorano l'accuratezza su nomi, acronimi e termini tecnici:
+
+```bash
+export VIBEASR_CONTEXT="Mario Rossi, progetto Alpha, QNAP, GDPR"
+```
+
+---
+
+## 6. Endpoint HTTP alternativi
+
+Modalità `openai` (multipart, contratto Whisper) e `raw` (body audio):
+
+```bash
+export VIBE_VOICE_URL="https://api.openai.com/v1/audio/transcriptions"
+export VIBE_VOICE_API_KEY="sk-..."
+meetingrec transcribe --input riunione.wav --language it
+```
+
+---
+
+## 7. Variabili d'ambiente (riepilogo)
+
+| Variabile | Flag equivalente | Scopo |
+|---|---|---|
+| `VIBE_VOICE_MODE` | `--mode` | `vibeasr` / `openai` / `raw` |
+| `VIBE_VOICE_URL` | `--api-url` | endpoint HTTP |
+| `VIBE_VOICE_API_KEY` | `--api-key` | chiave API |
+| `VIBE_VOICE_MODEL` | `--model` | modello HTTP |
+| `VIBE_VOICE_LANGUAGE` | `--language` | lingua |
+| `VIBE_VOICE_RESPONSE_KEY` | `--response-key` | chiave JSON del testo |
+| `VIBEASR_BIN` | `--vibeasr-bin` | binario asr_infer |
+| `VIBEASR_VAE_MODEL` | `--vibeasr-vae` | GGUF VAE |
+| `VIBEASR_LM_MODEL` | `--vibeasr-lm` | GGUF LM |
+| `VIBEASR_THREADS` | `--vibeasr-threads` | thread |
+| `VIBEASR_CONTEXT` | `--vibeasr-context` | hotwords |
+| `VIBEASR_FORMAT` | `--vibeasr-format` | `text` / `json` |
+
+---
+
+## 8. Struttura del progetto
+
+```
+meeting-recorder/
+├── src/
+│   ├── main.cpp          # CLI + orchestrazione + gestione eccezioni
+│   ├── recorder.cpp      # cattura audio (WASAPI su Windows, PortAudio altrove)
+│   ├── transcriber.cpp   # trascrizione (VibeASR locale / WinHTTP / libcurl)
+│   ├── minutes.cpp       # generazione minuta Markdown
+│   ├── wav_writer.cpp    # scrittura WAV
+│   └── tui.cpp           # interfaccia a colori (ANSI/VT)
+├── resources/            # icona (app.ico), manifest, app.rc
+├── scripts/
+│   ├── build_linux.sh    # build Linux
+│   ├── build_windows.sh  # cross-compile Windows (MinGW)
+│   ├── setup_vibeasr.sh  # setup VibeASR.cpp + modelli (Linux)
+│   ├── setup_vibeasr.bat # setup VibeASR.cpp + modelli (Windows)
+│   └── make_icon.py      # rigenera l'icona
+├── CMakeLists.txt / Makefile
+└── MANUALE.md / README.md
+```
+
+---
+
+## 9. Risoluzione dei problemi
+
+| Problema | Soluzione |
+|---|---|
+| `list` non mostra il loopback su Windows | Aggiorna il driver audio; verifica che l'uscita di default sia attiva |
+| Nessun audio registrato da Teams | Su Windows avvia la registrazione **dopo** aver aperto Teams; verifica il volume dell'app |
+| `Modello GGUF non trovato` | Esegui `scripts/setup_vibeasr.sh` / `.bat` |
+| `asr_infer non trovato` | Compila VibeASR.cpp oppure imposta `VIBEASR_BIN` con il percorso completo |
+| Trascrizione lenta | Aumenta `VIBEASR_THREADS` (prova 6-8) |
+| Su Linux non sento l'audio di sistema | Seleziona il dispositivo `monitor` con `--device N` |
+| La minuta non separa i relatori | Il modello CPU 1.5B produce testo puro; usa il 7B con `VIBEASR_FORMAT=json` |
+| Testo con caratteri strani su console Windows | Usa Windows Terminal (consigliato) oppure `chcp 65001` |
+
+---
+
+## 10. Privacy
+
+- Con `--mode vibeasr` l'audio **non esce mai dalla macchina**: registrazione e
+  trascrizione sono interamente locali.
+- Con `--mode openai/raw` l'audio viene inviato all'endpoint configurato: usalo solo
+  con riunioni per cui è consentito e con endpoint di tua fiducia.
