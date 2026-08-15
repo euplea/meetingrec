@@ -6,6 +6,9 @@ btest/
 *.exe
 meetingrec
 
+# Setup VibeASR (clone + modelli GGUF, ~1.7 GB)
+vibeasr/
+
 # Log temporanei di trascrizione
 *.asr.log
 

@@ -1,13 +1,17 @@
 @echo off
 rem Scarica e compila VibeASR.cpp (VibeVoice-ASR su CPU) e i modelli GGUF.
+rem Tutto viene creato in una cartella "vibeasr" RELATIVA a questo script
+rem (accanto a scripts/), cosi' il setup e' portabile: sposta la cartella
+rem del progetto e i percorsi restano validi.
 rem Richiede: git, cmake, MinGW-w64 (g++/mingw32-make) e curl (incluso in Windows 10).
 setlocal
-set "BASE=%USERPROFILE%\vibeasr"
+rem BASE = <cartella progetto>\vibeasr  (derivata dalla posizione di questo script)
+for %%i in ("%~dp0..") do set "BASE=%%~fi\vibeasr"
 set "HF=https://huggingface.co/microsoft/VibeVoice-ASR-BitNet/resolve/main"
 set "VAE=vibeasr-vae-encoder-i8_s.gguf"
 set "LM=vibeasr-lm-i2_s-embed-q6_k.gguf"
 
-echo == 1/3 Clonazione VibeASR.cpp ==
+echo == 1/3 Clonazione VibeASR.cpp in "%BASE%" ==
 if not exist "%BASE%\.git" (
     git clone --recursive https://github.com/microsoft/VibeASR.cpp.git "%BASE%"
 ) else (
@@ -34,7 +38,7 @@ if not exist "%BASE%\models\%LM%" (
 )
 
 echo.
-echo Fatto. Imposta le variabili d'ambiente:
+echo Fatto. Imposta le variabili d'ambiente (percorsi RELATIVI al progetto):
 echo   set VIBE_VOICE_MODE=vibeasr
 echo   set VIBEASR_BIN=%BASE%\build\bin\asr_infer.exe
 echo   set VIBEASR_VAE_MODEL=%BASE%\models\%VAE%

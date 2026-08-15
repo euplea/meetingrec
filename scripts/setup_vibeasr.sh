@@ -3,7 +3,7 @@
 # Uso:  bash scripts/setup_vibeasr.sh
 set -euo pipefail
 
-BASE="${VIBEASR_HOME:-$HOME/vibeasr}"
+BASE="${VIBEASR_HOME:-$(cd "$(dirname "$0")/.." && pwd)/vibeasr}"
 REPO="https://github.com/microsoft/VibeASR.cpp.git"
 HF="https://huggingface.co/microsoft/VibeVoice-ASR-BitNet/resolve/main"
 VAE="vibeasr-vae-encoder-i8_s.gguf"
