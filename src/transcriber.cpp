@@ -460,5 +460,19 @@ bool transcribe(const TranscribeOptions& opts, std::string& textOut, std::string
     if (opts.mode == "vibeasr") {
         return transcribeVibeAsr(opts, textOut, error);
     }
+
+    // Errore chiaro quando si usa il backend OpenAI senza chiave API.
+    if (opts.apiKey.empty() && opts.apiUrl.find("api.openai.com") != std::string::npos) {
+        error = "Nessuna chiave API (VIBE_VOICE_API_KEY) per il backend '" + opts.mode +
+                "' verso api.openai.com.\n"
+                "Suggerimento: usa la trascrizione LOCALE gratuita con VibeVoice-ASR:\n"
+                "  1) meetingrec download-models\n"
+                "  2) set VIBE_VOICE_MODE=vibeasr\n"
+                "  3) set VIBEASR_VAE_MODEL=<percorso GGUF VAE>  e  "
+                "VIBEASR_LM_MODEL=<percorso GGUF LM>\n"
+                "Oppure imposta una chiave valida: set VIBE_VOICE_API_KEY=sk-...";
+        return false;
+    }
+
     return transcribeHttp(opts, textOut, error);
 }
