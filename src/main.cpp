@@ -1,3 +1,4 @@
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -7,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "downloader.h"
 #include "minutes.h"
 #include "recorder.h"
 #include "transcriber.h"
@@ -51,6 +53,17 @@ double toDouble(const std::string& s, double def) {
     }
 }
 
+std::string fmtSize(uint64_t bytes) {
+    char buf[32];
+    if (bytes >= 1024ull * 1024 * 1024)
+        std::snprintf(buf, sizeof(buf), "%.2f GB", bytes / 1073741824.0);
+    else if (bytes >= 1024 * 1024)
+        std::snprintf(buf, sizeof(buf), "%.1f MB", bytes / 1048576.0);
+    else
+        std::snprintf(buf, sizeof(buf), "%llu B", static_cast<unsigned long long>(bytes));
+    return buf;
+}
+
 void usage() {
     std::cout
         << "\n"
@@ -64,6 +77,7 @@ void usage() {
         << "                      [--vibeasr-threads N] [--vibeasr-context TEXT] [--vibeasr-format text|json]\n"
         << "  meetingrec minutes  --transcript file.txt [--output minuta.md]\n"
         << "                      [--title T] [--attendees A,B] [--date YYYY-MM-DD]\n"
+        << "  meetingrec download-models [--dir PATH] [--vae-only | --lm-only]\n"
         << "  meetingrec all      --device N [--duration SEC] [--output-dir DIR]\n"
         << "                      [--title T] [--attendees A,B] [opzioni trascrizione...]\n\n"
         << "Variabili d'ambiente:\n"
@@ -265,6 +279,72 @@ int cmdAll(const std::vector<std::string>& args) {
     return 0;
 }
 
+int cmdDownloadModels(const std::vector<std::string>& args) {
+    const std::string dir = getArg(args, "--dir", "vibeasr/models");
+    std::error_code ec;
+    std::filesystem::create_directories(dir, ec);
+    if (ec) {
+        tui::error("Impossibile creare la directory " + dir + " (" + ec.message() + ")");
+        return 1;
+    }
+
+    struct ModelFile {
+        const char* name;
+        uint64_t size;
+    };
+    static const ModelFile files[] = {
+        {"vibeasr-vae-encoder-i8_s.gguf", 703080064ULL},
+        {"vibeasr-lm-i2_s-embed-q6_k.gguf", 992877600ULL},
+    };
+    const std::string base =
+        "https://huggingface.co/microsoft/VibeVoice-ASR-BitNet/resolve/main/";
+    const bool onlyVae = hasArg(args, "--vae-only");
+    const bool onlyLm = hasArg(args, "--lm-only");
+
+    tui::header(" Download modelli VibeVoice-ASR (GGUF) ");
+    tui::info("Destinazione: " + dir);
+
+    for (const auto& mf : files) {
+        const std::string name(mf.name);
+        if (onlyVae && name.find("vae") == std::string::npos) continue;
+        if (onlyLm && name.find("lm") == std::string::npos) continue;
+
+        const std::string dest = dir + "/" + name;
+        std::error_code fec;
+        const uintmax_t existing = std::filesystem::file_size(dest, fec);
+        if (!fec && existing == mf.size) {
+            tui::ok("Già presente e valido: " + dest);
+            continue;
+        }
+
+        tui::section("Download " + name + " (" + fmtSize(mf.size) + ")");
+        std::string err;
+        const bool ok = downloadFile(
+            base + name, dest, mf.size,
+            [](uint64_t cur, uint64_t total) {
+                std::string pct;
+                if (total > 0) {
+                    char b[16];
+                    std::snprintf(b, sizeof(b), "%.1f%%", 100.0 * cur / total);
+                    pct = b;
+                }
+                tui::progress("  " + fmtSize(cur) + " / " + fmtSize(total) + "  " + pct);
+            },
+            err);
+        tui::clearLine();
+        if (!ok) {
+            tui::error(err);
+            return 1;
+        }
+        tui::ok("Scaricato: " + dest);
+    }
+
+    tui::ok("Modelli pronti in " + dir);
+    tui::info("Configura: VIBEASR_VAE_MODEL=" + dir + "/vibeasr-vae-encoder-i8_s.gguf");
+    tui::info("           VIBEASR_LM_MODEL=" + dir + "/vibeasr-lm-i2_s-embed-q6_k.gguf");
+    return 0;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -284,6 +364,7 @@ int main(int argc, char** argv) {
         if (cmd == "record") return cmdRecord(args);
         if (cmd == "transcribe") return cmdTranscribe(args);
         if (cmd == "minutes") return cmdMinutes(args);
+        if (cmd == "download-models" || cmd == "dl") return cmdDownloadModels(args);
         if (cmd == "all") return cmdAll(args);
 
         tui::error("Comando sconosciuto: " + cmd);

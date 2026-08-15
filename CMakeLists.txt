@@ -6,6 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_executable(meetingrec
+    src/downloader.cpp
     src/main.cpp
     src/minutes.cpp
     src/recorder.cpp
