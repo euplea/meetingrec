@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "audio_convert.h"
 #include "config.h"
 #include "downloader.h"
 #include "minutes.h"
@@ -19,7 +20,9 @@ namespace {
 
 Config g_cfg;  // configurazione globale (meetingrec.json)
 
-const char* kVersion = "1.1.0";
+const char* kVersion = "1.2.0";
+
+int cmdConvert(const std::vector<std::string>& args);  // definita più avanti
 
 std::string getEnv(const char* name) {
     const char* v = std::getenv(name);
@@ -103,9 +106,11 @@ void usage() {
         << "                      [--language LANG] [--response-key KEY]\n"
         << "                      [--vibeasr-bin PATH] [--vibeasr-vae F.gguf] [--vibeasr-lm F.gguf]\n"
         << "                      [--vibeasr-threads N] [--vibeasr-context TEXT] [--vibeasr-format text|json]\n"
-        << "  meetingrec minutes  --transcript file.txt [--output minuta.md]\n"
-        << "                      [--title T] [--attendees A,B] [--date YYYY-MM-DD]\n"
+        << "  meetingrec minutes  --transcript file.txt [--output minuta.md|minuta.odt]\n"
+        << "                      [--title T] [--attendees A,B] [--date YYYY-MM-DD] [--format md|odt]\n"
         << "  meetingrec download-models [--dir PATH] [--vae-only | --lm-only]\n"
+        << "  meetingrec convert --input in.wav|mp3|flac --output out.wav\n"
+        << "                      [--rate HZ] [--channels N]\n"
         << "  meetingrec all      --device N [--duration SEC] [--output-dir DIR]\n"
         << "                      [--title T] [--attendees A,B] [opzioni trascrizione...]\n\n"
         << "Variabili d'ambiente:\n"
@@ -228,9 +233,19 @@ int cmdMinutes(const std::vector<std::string>& args) {
     o.attendees = getArg(args, "--attendees");
     o.outputPath = getArg(args, "--output", g_cfg.outputDir + "/minuta.md");
 
-    tui::section("Generazione minuta...");
+    // Formato: --format md|odt, altrimenti auto dall'estensione del file.
+    std::string fmt = getArg(args, "--format");
+    if (fmt.empty()) {
+        fmt = (o.outputPath.size() > 4 &&
+               o.outputPath.compare(o.outputPath.size() - 4, 4, ".odt") == 0)
+                  ? "odt"
+                  : "md";
+    }
+
+    tui::section("Generazione minuta (" + fmt + ")...");
     std::string err;
-    if (!writeMinutes(o, err)) {
+    const bool ok = (fmt == "odt") ? writeMinutesOdt(o, err) : writeMinutes(o, err);
+    if (!ok) {
         tui::error(err);
         return 1;
     }
@@ -247,9 +262,13 @@ int cmdAll(const std::vector<std::string>& args) {
         return 1;
     }
 
+    // Formato minuta: --format md|odt (default md).
+    std::string fmt = getArg(args, "--format");
+    if (fmt.empty()) fmt = "md";
+
     const std::string wav = dir + "/audio.wav";
     const std::string txt = dir + "/transcript.txt";
-    const std::string md = dir + "/minuta.md";
+    const std::string md = dir + "/minuta." + fmt;
 
     // 1) Registrazione
     RecordOptions ro;
@@ -296,8 +315,9 @@ int cmdAll(const std::vector<std::string>& args) {
     mo.attendees = getArg(args, "--attendees");
     mo.outputPath = md;
 
-    tui::header(" FASE 3/3 - Minuta ");
-    if (!writeMinutes(mo, err)) {
+    tui::header(" FASE 3/3 - Minuta (" + fmt + ") ");
+    const bool ok = (fmt == "odt") ? writeMinutesOdt(mo, err) : writeMinutes(mo, err);
+    if (!ok) {
         tui::error(err);
         return 1;
     }
@@ -467,7 +487,8 @@ int interactiveMenu() {
             << "    5) Configurazione (sotto-menu)\n"
             << "    6) Elenca i dispositivi audio\n"
             << "    7) Scarica i modelli VibeVoice (GGUF)\n"
-            << "    8) Esci\n"
+            << "    8) Converti audio (mp3/flac -> wav)\n"
+            << "    9) Esci\n"
             << "Scelta: " << std::flush;
 
         std::string line;
@@ -491,12 +512,43 @@ int interactiveMenu() {
             cmdList();
         } else if (line == "7") {
             cmdDownloadModels({});
-        } else if (line == "8" || line.empty()) {
+        } else if (line == "8") {
+            tui::header(" CONVERSIONE AUDIO ");
+            std::string in;
+            if (promptValue("File di input", "", in)) {
+                std::string out;
+                if (promptValue("File di output (.wav)", "", out)) {
+                    std::vector<std::string> a = {"--input", in, "--output", out};
+                    cmdConvert(a);
+                }
+            }
+        } else if (line == "9" || line.empty()) {
             return 0;
         } else {
             tui::warn("Scelta non valida.");
         }
     }
+}
+
+int cmdConvert(const std::vector<std::string>& args) {
+    const std::string in = getArg(args, "--input");
+    const std::string out = getArg(args, "--output");
+    if (in.empty() || out.empty()) {
+        tui::error("--input e --output richiesti.");
+        return 1;
+    }
+    const int rate = toInt(getArg(args, "--rate"), 16000);
+    const int channels = toInt(getArg(args, "--channels"), 1);
+
+    tui::section("Conversione audio...");
+    std::string err;
+    if (!convertAudio(in, out, rate, channels, err)) {
+        tui::error(err);
+        return 1;
+    }
+    tui::ok("Convertito: " + in + " -> " + out + " (" + std::to_string(rate) + " Hz, " +
+            std::to_string(channels) + " ch)");
+    return 0;
 }
 
 }  // namespace
@@ -537,6 +589,8 @@ int main(int argc, char** argv) {
                 rc = cmdMinutes(args);
             else if (cmd == "download-models" || cmd == "dl")
                 rc = cmdDownloadModels(args);
+            else if (cmd == "convert")
+                rc = cmdConvert(args);
             else if (cmd == "all")
                 rc = cmdAll(args);
             else {

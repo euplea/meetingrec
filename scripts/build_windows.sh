@@ -14,11 +14,11 @@ echo "== 1/2 Compilazione risorse (icona + manifest) =="
 "$WINDRES" resources/app.rc -O coff -o "$OUT/app_res.o"
 
 echo "== 2/2 Compilazione sorgenti =="
-SRCS=(src/config.cpp src/downloader.cpp src/main.cpp src/minutes.cpp src/recorder.cpp src/transcriber.cpp src/tui.cpp src/wav_writer.cpp)
+SRCS=(src/audio_convert.cpp src/config.cpp src/downloader.cpp src/main.cpp src/minutes.cpp src/recorder.cpp src/transcriber.cpp src/tui.cpp src/wav_writer.cpp)
 OBJS=()
 for f in "${SRCS[@]}"; do
   obj="$OUT/$(basename "${f%.cpp}").o"
-  "$CXX" -std=c++17 -O2 -Wall -Wextra -Isrc -c "$f" -o "$obj"
+  "$CXX" -std=c++17 -O2 -Wall -Wextra -Isrc -I3rdparty -c "$f" -o "$obj"
   OBJS+=("$obj")
 done
 

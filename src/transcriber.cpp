@@ -1,5 +1,7 @@
 #include "transcriber.h"
 
+#include "audio_convert.h"
+
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -142,10 +144,31 @@ bool transcribeVibeAsr(const TranscribeOptions& opts, std::string& textOut,
 
     const std::string format = opts.vibeasrFormat.empty() ? "text" : opts.vibeasrFormat;
 
+    // VibeASR.cpp accetta WAV nativamente: converte gli altri formati (mp3/flac/...)
+    // in un WAV temporaneo 16 kHz mono prima di inviargli il file.
+    std::string audioPath = opts.inputPath;
+    std::string tempWav;
+    {
+        const size_t dot = opts.inputPath.find_last_of('.');
+        const std::string ext =
+            dot == std::string::npos ? "" : opts.inputPath.substr(dot + 1);
+        std::string lowerExt;
+        for (char c : ext) lowerExt += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        if (lowerExt != "wav") {
+            tempWav = opts.inputPath + ".conv.wav";
+            std::string convErr;
+            if (!convertAudio(opts.inputPath, tempWav, 16000, 1, convErr)) {
+                error = "Conversione audio fallita: " + convErr;
+                return false;
+            }
+            audioPath = tempWav;
+        }
+    }
+
     std::string cmd = quoteArg(bin) +
                       " --vae-model " + quoteArg(opts.vibeasrVaeModel) +
                       " --lm-model " + quoteArg(opts.vibeasrLmModel) +
-                      " --audio " + quoteArg(opts.inputPath) +
+                      " --audio " + quoteArg(audioPath) +
                       " -t " + std::to_string(opts.vibeasrThreads) +
                       " --prompt-format " + format + " --greedy";
     if (!opts.vibeasrContext.empty()) cmd += " --context " + quoteArg(opts.vibeasrContext);
@@ -166,8 +189,10 @@ bool transcribeVibeAsr(const TranscribeOptions& opts, std::string& textOut,
     textOut = trim(out);
     if (textOut.empty()) {
         error = "Nessun testo prodotto da asr_infer";
+        if (!tempWav.empty()) std::remove(tempWav.c_str());
         return false;
     }
+    if (!tempWav.empty()) std::remove(tempWav.c_str());
     return true;
 }
 
@@ -250,7 +275,7 @@ bool transcribeHttp(const TranscribeOptions& opts, std::string& textOut,
     const bool https = (uc.nScheme == INTERNET_SCHEME_HTTPS);
 
     // 4) Effettua la richiesta.
-    HINTERNET hSession = WinHttpOpen(L"meetingrec/1.1.0", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+    HINTERNET hSession = WinHttpOpen(L"meetingrec/1.2.0", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
                                      WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (!hSession) {
         error = "WinHttpOpen fallito (0x" + std::to_string(GetLastError()) + ")";

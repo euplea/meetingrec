@@ -1,6 +1,7 @@
 #include "minutes.h"
 
 #include <cctype>
+#include <cstdint>
 #include <ctime>
 #include <fstream>
 #include <regex>
@@ -100,23 +101,33 @@ std::vector<Segment> parseSegments(const std::string& text) {
     return out;
 }
 
-}  // namespace
+// ---------------------------------------------------------------------------
+// Modello del documento (condiviso dai renderer Markdown e ODT).
+// ---------------------------------------------------------------------------
+struct MinuteDoc {
+    std::string title;
+    std::string date;
+    std::string attendees;
+    std::string speakers;
+    std::vector<std::pair<std::string, std::vector<std::string>>> sections;
+    std::vector<Segment> segments;
+    std::string transcript;
+    bool hasSegments = false;
+};
 
-bool writeMinutes(const MinutesOptions& o, std::string& error) {
-    std::ofstream f(o.outputPath);
-    if (!f) {
-        error = "Impossibile aprire " + o.outputPath;
-        return false;
-    }
-
-    const std::string date = o.date.empty() ? today() : o.date;
-    const std::vector<Segment> segments = parseSegments(o.transcriptText);
+bool buildDoc(const MinutesOptions& o, MinuteDoc& doc) {
+    doc.title = o.title;
+    doc.date = o.date.empty() ? today() : o.date;
+    doc.attendees = o.attendees;
+    doc.transcript = o.transcriptText;
+    doc.segments = parseSegments(o.transcriptText);
+    doc.hasSegments = !doc.segments.empty();
 
     // Analisi euristica sul testo (solo i contenuti se ci sono segmenti strutturati).
     std::string analysisText = o.transcriptText;
-    if (!segments.empty()) {
+    if (!doc.segments.empty()) {
         std::string joined;
-        for (const auto& s : segments) {
+        for (const auto& s : doc.segments) {
             if (!joined.empty()) joined += " ";
             joined += s.content;
         }
@@ -142,13 +153,14 @@ bool writeMinutes(const MinutesOptions& o, std::string& error) {
         else if (containsAny(s, actionKw)) actions.push_back(s);
         else topics.push_back(s);
     }
+    doc.sections.emplace_back("Punti discussi", topics);
+    doc.sections.emplace_back("Decisioni", decisions);
+    doc.sections.emplace_back("Azioni / To-do", actions);
+    doc.sections.emplace_back("Rischi / Blocker", risks);
 
-    f << "# " << o.title << "\n\n";
-    f << "- **Data:** " << date << "\n";
-    if (!o.attendees.empty()) f << "- **Partecipanti:** " << o.attendees << "\n";
-    if (!segments.empty()) {
+    if (!doc.segments.empty()) {
         std::set<std::string> speakers;
-        for (const auto& s : segments)
+        for (const auto& s : doc.segments)
             if (!s.speaker.empty()) speakers.insert(s.speaker);
         if (!speakers.empty()) {
             std::string joined;
@@ -156,39 +168,279 @@ bool writeMinutes(const MinutesOptions& o, std::string& error) {
                 if (it != speakers.begin()) joined += ", ";
                 joined += *it;
             }
-            f << "- **Relatori rilevati:** " << joined << "\n";
+            doc.speakers = joined;
         }
     }
-    f << "\n";
+    return true;
+}
 
-    const auto section = [&f](const char* title, const std::vector<std::string>& items) {
-        f << "## " << title << "\n\n";
+std::string renderMarkdown(const MinuteDoc& d) {
+    std::string out;
+    out += "# " + d.title + "\n\n";
+    out += "- **Data:** " + d.date + "\n";
+    if (!d.attendees.empty()) out += "- **Partecipanti:** " + d.attendees + "\n";
+    if (!d.speakers.empty()) out += "- **Relatori rilevati:** " + d.speakers + "\n";
+    out += "\n";
+
+    const auto section = [&out](const char* title, const std::vector<std::string>& items) {
+        out += "## " + std::string(title) + "\n\n";
         if (items.empty()) {
-            f << "- _(nessun elemento rilevato)_\n\n";
+            out += "- _(nessun elemento rilevato)_\n\n";
         } else {
-            for (const auto& i : items) f << "- " << i << "\n";
-            f << "\n";
+            for (const auto& i : items) out += "- " + i + "\n";
+            out += "\n";
         }
     };
 
-    section("Punti discussi", topics);
-    section("Decisioni", decisions);
-    section("Azioni / To-do", actions);
-    section("Rischi / Blocker", risks);
+    for (const auto& sec : d.sections) section(sec.first.c_str(), sec.second);
 
-    if (!segments.empty()) {
-        f << "## Trascrizione per relatori\n\n";
-        for (const auto& s : segments) {
-            f << "- [" << s.start << " - " << s.end << "]";
-            if (!s.speaker.empty()) f << " **Relatore " << s.speaker << "**:";
-            f << " " << s.content << "\n";
+    if (d.hasSegments) {
+        out += "## Trascrizione per relatori\n\n";
+        for (const auto& s : d.segments) {
+            out += "- [" + s.start + " - " + s.end + "]";
+            if (!s.speaker.empty()) out += " **Relatore " + s.speaker + "**:";
+            out += " " + s.content + "\n";
         }
-        f << "\n";
+        out += "\n";
     }
 
-    f << "## Trascrizione integrale\n\n";
-    f << o.transcriptText << "\n";
+    out += "## Trascrizione integrale\n\n";
+    out += d.transcript + "\n";
+    return out;
+}
 
+// ---------------------------------------------------------------------------
+// Export ODT (OpenDocument Text) — pacchetto ZIP con XML minimale.
+// ---------------------------------------------------------------------------
+
+std::string xmlEscape(const std::string& s) {
+    std::string r;
+    for (char c : s) {
+        switch (c) {
+            case '&': r += "&amp;"; break;
+            case '<': r += "&lt;"; break;
+            case '>': r += "&gt;"; break;
+            case '"': r += "&quot;"; break;
+            case '\'': r += "&apos;"; break;
+            default: r += c;
+        }
+    }
+    return r;
+}
+
+uint32_t crc32(const void* data, size_t len) {
+    static uint32_t table[256];
+    static bool init = false;
+    if (!init) {
+        for (uint32_t i = 0; i < 256; ++i) {
+            uint32_t c = i;
+            for (int k = 0; k < 8; ++k) c = (c & 1) ? (0xEDB88320u ^ (c >> 1)) : (c >> 1);
+            table[i] = c;
+        }
+        init = true;
+    }
+    const uint8_t* p = static_cast<const uint8_t*>(data);
+    uint32_t c = 0xFFFFFFFFu;
+    for (size_t i = 0; i < len; ++i) c = table[(c ^ p[i]) & 0xFF] ^ (c >> 8);
+    return c ^ 0xFFFFFFFFu;
+}
+
+void put16(std::string& s, uint16_t v) {
+    s.push_back(static_cast<char>(v & 0xFF));
+    s.push_back(static_cast<char>((v >> 8) & 0xFF));
+}
+void put32(std::string& s, uint32_t v) {
+    for (int i = 0; i < 4; ++i) {
+        s.push_back(static_cast<char>(v & 0xFF));
+        v >>= 8;
+    }
+}
+
+// ZIP in modalità STORE (senza compressione) — sufficiente e compatibile.
+std::string makeZip(const std::vector<std::pair<std::string, std::string>>& entries) {
+    std::string out;
+    std::vector<uint32_t> offsets;
+
+    for (const auto& e : entries) {
+        offsets.push_back(static_cast<uint32_t>(out.size()));
+        out += "PK\x03\x04";
+        put16(out, 20);  // version needed
+        put16(out, 0);   // flags
+        put16(out, 0);   // method: stored
+        put16(out, 0);   // mod time
+        put16(out, 0x21);  // mod date
+        put32(out, crc32(e.second.data(), e.second.size()));
+        put32(out, static_cast<uint32_t>(e.second.size()));
+        put32(out, static_cast<uint32_t>(e.second.size()));
+        put16(out, static_cast<uint16_t>(e.first.size()));
+        put16(out, 0);  // extra
+        out += e.first;
+        out += e.second;
+    }
+
+    const uint32_t cdStart = static_cast<uint32_t>(out.size());
+    for (size_t i = 0; i < entries.size(); ++i) {
+        out += "PK\x01\x02";
+        put16(out, 0x031E);  // version made by
+        put16(out, 20);      // version needed
+        put16(out, 0);
+        put16(out, 0);       // stored
+        put16(out, 0);
+        put16(out, 0x21);
+        put32(out, crc32(entries[i].second.data(), entries[i].second.size()));
+        put32(out, static_cast<uint32_t>(entries[i].second.size()));
+        put32(out, static_cast<uint32_t>(entries[i].second.size()));
+        put16(out, static_cast<uint16_t>(entries[i].first.size()));  // filename len
+        put16(out, 0);       // extra len
+        put16(out, 0);       // comment len
+        put16(out, 0);       // disk number start
+        put16(out, 0);       // internal attrs
+        put32(out, 0);       // external attrs
+        put32(out, offsets[i]);
+        out += entries[i].first;
+    }
+    const uint32_t cdSize = static_cast<uint32_t>(out.size()) - cdStart;
+
+    out += "PK\x05\x06";
+    put16(out, 0);
+    put16(out, 0);
+    put16(out, static_cast<uint16_t>(entries.size()));
+    put16(out, static_cast<uint16_t>(entries.size()));
+    put32(out, cdSize);
+    put32(out, cdStart);
+    put16(out, 0);
+    return out;
+}
+
+std::string renderOdt(const MinuteDoc& d) {
+    auto p = [](const std::string& text) {
+        return std::string("<text:p>") + xmlEscape(text) + "</text:p>";
+    };
+    auto h = [](int lvl, const std::string& text) {
+        return std::string("<text:h text:outline-level=\"") + std::to_string(lvl) + "\">" +
+               xmlEscape(text) + "</text:h>";
+    };
+
+    std::string body;
+    body += h(1, d.title);
+    body += p("Data: " + d.date);
+    if (!d.attendees.empty()) body += p("Partecipanti: " + d.attendees);
+    if (!d.speakers.empty()) body += p("Relatori rilevati: " + d.speakers);
+
+    for (const auto& sec : d.sections) {
+        body += h(2, sec.first);
+        if (sec.second.empty()) {
+            body += p("(nessun elemento rilevato)");
+        } else {
+            for (const auto& it : sec.second) body += p("•  " + it);
+        }
+    }
+
+    if (d.hasSegments) {
+        body += h(2, "Trascrizione per relatori");
+        for (const auto& s : d.segments) {
+            std::string line = "[" + s.start + " - " + s.end + "]";
+            if (!s.speaker.empty()) line += "  Relatore " + s.speaker + ":";
+            line += "  " + s.content;
+            body += p(line);
+        }
+    }
+
+    body += h(2, "Trascrizione integrale");
+    body += p(d.transcript);
+
+    const std::string contentXml =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+        "<office:document-content "
+        "xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\" "
+        "xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\" "
+        "office:version=\"1.2\">\n"
+        "<office:body><office:text>" + body +
+        "</office:text></office:body>\n"
+        "</office:document-content>\n";
+
+    const std::string stylesXml =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+        "<office:document-styles "
+        "xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\" "
+        "xmlns:style=\"urn:oasis:names:tc:opendocument:xmlns:style:1.0\" "
+        "xmlns:fo=\"urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0\" "
+        "office:version=\"1.2\">\n"
+        "<office:styles>\n"
+        "  <style:default-style style:family=\"paragraph\">\n"
+        "    <style:text-properties fo:font-size=\"11pt\"/>\n"
+        "  </style:default-style>\n"
+        "</office:styles>\n"
+        "</office:document-styles>\n";
+
+    const std::string metaXml =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+        "<office:document-meta "
+        "xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\" "
+        "xmlns:meta=\"urn:oasis:names:tc:opendocument:xmlns:meta:1.0\" "
+        "xmlns:dc=\"http://purl.org/dc/elements/1.1/\" "
+        "office:version=\"1.2\">\n"
+        "<office:meta>\n"
+        "  <meta:generator>meetingrec 1.2.0</meta:generator>\n"
+        "  <dc:title>" + xmlEscape(d.title) + "</dc:title>\n"
+        "</office:meta>\n"
+        "</office:document-meta>\n";
+
+    const std::string manifestXml =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+        "<manifest:manifest "
+        "xmlns:manifest=\"urn:oasis:names:tc:opendocument:xmlns:manifest:1.0\" "
+        "manifest:version=\"1.2\">\n"
+        "  <manifest:file-entry manifest:full-path=\"/\" "
+        "manifest:media-type=\"application/vnd.oasis.opendocument.text\"/>\n"
+        "  <manifest:file-entry manifest:full-path=\"content.xml\" "
+        "manifest:media-type=\"text/xml\"/>\n"
+        "  <manifest:file-entry manifest:full-path=\"styles.xml\" "
+        "manifest:media-type=\"text/xml\"/>\n"
+        "  <manifest:file-entry manifest:full-path=\"meta.xml\" "
+        "manifest:media-type=\"text/xml\"/>\n"
+        "</manifest:manifest>\n";
+
+    std::vector<std::pair<std::string, std::string>> entries;
+    entries.emplace_back("mimetype", "application/vnd.oasis.opendocument.text");
+    entries.emplace_back("META-INF/manifest.xml", manifestXml);
+    entries.emplace_back("content.xml", contentXml);
+    entries.emplace_back("styles.xml", stylesXml);
+    entries.emplace_back("meta.xml", metaXml);
+    return makeZip(entries);
+}
+
+}  // namespace
+
+bool writeMinutes(const MinutesOptions& o, std::string& error) {
+    MinuteDoc doc;
+    if (!buildDoc(o, doc)) {
+        error = "Impossibile generare la minuta";
+        return false;
+    }
+    std::ofstream f(o.outputPath);
+    if (!f) {
+        error = "Impossibile aprire " + o.outputPath;
+        return false;
+    }
+    f << renderMarkdown(doc);
+    f.close();
+    return true;
+}
+
+bool writeMinutesOdt(const MinutesOptions& o, std::string& error) {
+    MinuteDoc doc;
+    if (!buildDoc(o, doc)) {
+        error = "Impossibile generare la minuta";
+        return false;
+    }
+    const std::string odt = renderOdt(doc);
+    std::ofstream f(o.outputPath, std::ios::binary);
+    if (!f) {
+        error = "Impossibile aprire " + o.outputPath;
+        return false;
+    }
+    f << odt;
     f.close();
     return true;
 }

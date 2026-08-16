@@ -12,3 +12,6 @@ struct MinutesOptions {
 
 // Turns a raw transcript into a Markdown meeting minute.
 bool writeMinutes(const MinutesOptions& opts, std::string& error);
+
+// Turns a raw transcript into an OpenDocument Text (.odt) meeting minute.
+bool writeMinutesOdt(const MinutesOptions& opts, std::string& error);

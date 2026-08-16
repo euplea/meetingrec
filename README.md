@@ -29,7 +29,8 @@ Configurazione).
 - `list`       → elenca i dispositivi audio (su Windows mostra le sorgenti `LOOPBACK`)
 - `record`     → registra in un file WAV (16 bit PCM)
 - `transcribe` → trascrive (VibeASR locale o API HTTP) e salva il testo
-- `minutes`    → trasforma la trascrizione in minuta Markdown (decisioni, azioni, rischi)
+- `minutes`    → minuta in Markdown **o ODT** (`--format odt`), con decisioni/azioni/rischi
+- `convert`    → converte audio (MP3/FLAC → WAV nativo; altri formati con ffmpeg)
 - `all`        → pipeline completa: registra → trascrive → minuta
 
 ## Build su Windows 10

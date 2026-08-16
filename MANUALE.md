@@ -124,7 +124,8 @@ Durante la registrazione: **INVIO** o **Ctrl+C** per fermare.
 | Opzione | Default | Descrizione |
 |---|---|---|
 | `--transcript file.txt` | — | Trascrizione (richiesto) |
-| `--output file.md` | `minuta.md` | Minuta Markdown |
+| `--output file.md` | `minuta.md` | Minuta (Markdown `.md` o documento `.odt`) |
+| `--format` | auto | `md` o `odt` (default: dall'estensione di `--output`) |
 | `--title T` | `Minuta riunione` | Titolo |
 | `--attendees A,B` | — | Partecipanti |
 | `--date YYYY-MM-DD` | oggi | Data |
@@ -132,6 +133,17 @@ Durante la registrazione: **INVIO** o **Ctrl+C** per fermare.
 La minuta contiene: **Punti discussi · Decisioni · Azioni/To-do · Rischi/Blocker ·
 Trascrizione integrale** (e **Trascrizione per relatori** se la trascrizione è
 strutturata con orari e relatori).
+
+### 4.4bis `convert`
+
+Converte file audio (WAV/MP3/FLAC nativi; altri formati richiedono `ffmpeg`):
+
+```bash
+meetingrec convert --input riunione.mp3 --output riunione.wav --rate 16000 --channels 1
+```
+
+Con `transcribe --mode vibeasr` gli input diversi da WAV vengono **convertiti
+automaticamente** in WAV 16 kHz mono prima della trascrizione.
 
 ### 4.5 `all`
 

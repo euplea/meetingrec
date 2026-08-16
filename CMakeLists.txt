@@ -6,6 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_executable(meetingrec
+    src/audio_convert.cpp
     src/config.cpp
     src/downloader.cpp
     src/main.cpp
@@ -16,7 +17,7 @@ add_executable(meetingrec
     src/wav_writer.cpp
 )
 
-target_include_directories(meetingrec PRIVATE src)
+target_include_directories(meetingrec PRIVATE src 3rdparty)
 
 if(WIN32)
     target_compile_definitions(meetingrec PRIVATE

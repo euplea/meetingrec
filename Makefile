@@ -1,7 +1,7 @@
 CXX      ?= g++
 CXXFLAGS ?= -std=c++17 -O2 -Wall -Wextra
 PKGS      = portaudio-2.0 libcurl
-CPPFLAGS += $(shell pkg-config --cflags $(PKGS))
+CPPFLAGS += -I3rdparty -Isrc $(shell pkg-config --cflags $(PKGS))
 LIBS      = $(shell pkg-config --libs $(PKGS)) -pthread
 
 SRCDIR   = src
