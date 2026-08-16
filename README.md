@@ -4,7 +4,10 @@ Strumento C++ per registrare **l'audio riprodotto dal sistema** (la voce che esc
 Microsoft Teams, Zoom, Google Meet, ecc.), trascriverlo e generare automaticamente una
 **minuta di riunione** in Markdown.
 
-Funziona su **Windows 10**, **Linux** e **macOS**.
+Funziona su **Windows 10**, **Linux** e **macOS**. Tutte le impostazioni
+sono configurabili via **flag**, **variabili d'ambiente** o file **`meetingrec.json`**
+(menu interattivo con doppio clic: 3 passi singoli + pipeline completa + sotto-menu
+Configurazione).
 
 > 📥 **Eseguibili pronti:** scaricali dalla [GitHub Release](https://github.com/euplea/meetingrec/releases)
 > (`meetingrec-windows-x64.exe`, `meetingrec-linux-x64`) — includono il comando

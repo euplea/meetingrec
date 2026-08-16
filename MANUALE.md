@@ -225,6 +225,56 @@ meetingrec transcribe --input riunione.wav --language it
 
 ---
 
+## 7bis. File di configurazione JSON (`meetingrec.json`)
+
+Tutti i settaggi possono essere salvati in un file JSON **`meetingrec.json`** nella
+cartella corrente (es. accanto all'eseguibile). Priorità di risoluzione:
+**flag CLI > variabili d'ambiente > meetingrec.json > default**.
+
+Esempio:
+
+```json
+{
+  "mode": "vibeasr",
+  "vibeasr_bin": "C:\vibeasr\build\bin\asr_infer.exe",
+  "vibeasr_vae": "C:\vibeasr\models\vibeasr-vae-encoder-i8_s.gguf",
+  "vibeasr_lm": "C:\vibeasr\models\vibeasr-lm-i2_s-embed-q6_k.gguf",
+  "vibeasr_threads": 4,
+  "vibeasr_format": "json",
+  "vibeasr_context": "Mario Rossi, progetto Alpha",
+  "api_url": "https://api.openai.com/v1/audio/transcriptions",
+  "api_key": "sk-...",
+  "language": "it",
+  "output_dir": "riunione",
+  "title": "Minuta riunione"
+}
+```
+
+> Il modo più semplice per crearle/modificarle: **menu interattivo → 5) Configurazione**
+> (doppio clic sull'eseguibile su Windows), poi `13) Salva`.
+
+## 8. Menu interattivo (doppio clic su Windows)
+
+Doppio clic su `meetingrec.exe` (in Windows Terminal) apre un menu:
+
+```
+MENU PRINCIPALE
+  Passi singoli:
+    1) Registra l'audio (Fase 1)
+    2) Trascrivi l'audio (Fase 2)
+    3) Genera la minuta (Fase 3)
+  Pipeline completa:
+    4) Registra + Trascrivi + Minuta (1+2+3)
+  Strumenti:
+    5) Configurazione (sotto-menu)
+    6) Elenca i dispositivi audio
+    7) Scarica i modelli VibeVoice (GGUF)
+    8) Esci
+```
+
+Il sotto-menu **Configurazione** (5) permette di modificare tutti i valori e salvarli
+su `meetingrec.json` (INVIO su un campo = mantieni il valore corrente).
+
 ## 8. Struttura del progetto
 
 ```
