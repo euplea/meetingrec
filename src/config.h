@@ -18,6 +18,7 @@ struct Config {
     int vibeasrThreads = 4;
     std::string vibeasrContext;
     std::string vibeasrFormat = "json";         // json (relatori+tempi) | text
+    int vibeasrCtx = 8192;                       // contesto LM (KV cache): riduci se RAM scarsa
 
     std::string outputDir = "meeting";
     std::string title = "Minuta riunione";

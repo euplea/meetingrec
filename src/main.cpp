@@ -21,7 +21,7 @@ namespace {
 
 Config g_cfg;  // configurazione globale (meetingrec.json)
 
-const char* kVersion = "2026.08.3";  // schema AAAA.MM.nn
+const char* kVersion = "2026.08.4";  // schema AAAA.MM.nn
 
 int cmdConvert(const std::vector<std::string>& args);  // definita più avanti
 int cmdSetup();  // definita più avanti
@@ -108,6 +108,7 @@ void usage() {
         << "                      [--language LANG] [--response-key KEY]\n"
         << "                      [--vibeasr-bin PATH] [--vibeasr-vae F.gguf] [--vibeasr-lm F.gguf]\n"
         << "                      [--vibeasr-threads N] [--vibeasr-context TEXT] [--vibeasr-format text|json]\n"
+        << "                      [--vibeasr-ctx N]  (contesto LM, default 8192; riduci a 4096 se RAM scarsa)\n"
         << "  meetingrec minutes  --transcript file.txt [--output minuta.md|minuta.odt]\n"
         << "                      [--title T] [--attendees A,B] [--date YYYY-MM-DD] [--format md|odt]\n"
         << "  meetingrec download-models [--dir PATH] [--vae-only | --lm-only]\n"
@@ -139,6 +140,8 @@ void fillVibeasrOptions(TranscribeOptions& o, const std::vector<std::string>& ar
         pick(args, "--vibeasr-context", "VIBEASR_CONTEXT", g_cfg.vibeasrContext, "");
     o.vibeasrFormat =
         pick(args, "--vibeasr-format", "VIBEASR_FORMAT", g_cfg.vibeasrFormat, "json");
+    o.vibeasrCtx =
+        pickInt(args, "--vibeasr-ctx", "VIBEASR_CTX", g_cfg.vibeasrCtx, 8192);
 }
 
 void fillTranscribeCommon(TranscribeOptions& o, const std::vector<std::string>& args) {
@@ -204,7 +207,13 @@ int cmdTranscribe(const std::vector<std::string>& args) {
         tui::error(err);
         return 1;
     }
-    const std::string out = getArg(args, "--output", "transcript.txt");
+    const std::string out = getArg(args, "--output", g_cfg.outputDir + "/transcript.txt");
+    // Crea la cartella di destinazione se non esiste.
+    {
+        std::error_code ec;
+        std::filesystem::path p(out);
+        if (p.has_parent_path()) std::filesystem::create_directories(p.parent_path(), ec);
+    }
     try {
         std::ofstream f(out);
         if (!f) throw std::runtime_error("impossibile aprire " + out);

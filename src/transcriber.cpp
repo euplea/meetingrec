@@ -250,6 +250,7 @@ bool transcribeVibeAsr(const TranscribeOptions& opts, std::string& textOut,
                       " --lm-model " + quoteArg(opts.vibeasrLmModel) +
                       " --audio " + quoteArg(audioPath) +
                       " -t " + std::to_string(opts.vibeasrThreads) +
+                      " -c " + std::to_string(opts.vibeasrCtx > 0 ? opts.vibeasrCtx : 8192) +
                       " --prompt-format " + format + " --greedy";
     if (!opts.vibeasrContext.empty()) cmd += " --context " + quoteArg(opts.vibeasrContext);
 
@@ -263,6 +264,16 @@ bool transcribeVibeAsr(const TranscribeOptions& opts, std::string& textOut,
     if (exitCode != 0) {
         const std::string tail = errOut.size() > 400 ? errOut.substr(errOut.size() - 400) : errOut;
         error = "asr_infer terminato con codice " + std::to_string(exitCode) + ":\n" + tail;
+        // Suggerimento mirato in caso di problemi di memoria (GGML_ASSERT/malloc).
+        if (errOut.find("GGML_ASSERT") != std::string::npos ||
+            errOut.find("mem_buffer") != std::string::npos ||
+            errOut.find("out of memory") != std::string::npos) {
+            error += "\nPossibile memoria RAM insufficiente.\n"
+                     "Suggerimenti:\n"
+                     "  - chiudi altri programmi (l'inferenza serve 4-8 GB liberi)\n"
+                     "  - riduci il contesto LM: --vibeasr-ctx 4096 (o in meetingrec.json 'vibeasr_ctx')\n"
+                     "  - per riunioni lunghe aumenta invece il valore (es. 16384)\n";
+        }
         return false;
     }
 
@@ -347,7 +358,7 @@ bool transcribeHttp(const TranscribeOptions& opts, std::string& textOut,
     const bool https = (uc.nScheme == INTERNET_SCHEME_HTTPS);
 
     // 4) Effettua la richiesta.
-    HINTERNET hSession = WinHttpOpen(L"meetingrec/2026.08.3", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+    HINTERNET hSession = WinHttpOpen(L"meetingrec/2026.08.4", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
                                      WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (!hSession) {
         error = "WinHttpOpen fallito (0x" + std::to_string(GetLastError()) + ")";

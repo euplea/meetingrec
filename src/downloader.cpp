@@ -60,7 +60,7 @@ bool downloadFile(const std::string& url, const std::string& dest, uint64_t expe
     if (path.empty()) path = L"/";
     const bool https = (uc.nScheme == INTERNET_SCHEME_HTTPS);
 
-    HINTERNET hSession = WinHttpOpen(L"meetingrec-dl/2026.08.3", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+    HINTERNET hSession = WinHttpOpen(L"meetingrec-dl/2026.08.4", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
                                      WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (!hSession) {
         error = "WinHttpOpen fallito (0x" + std::to_string(GetLastError()) + ")";
