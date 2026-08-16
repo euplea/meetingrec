@@ -21,9 +21,10 @@ namespace {
 
 Config g_cfg;  // configurazione globale (meetingrec.json)
 
-const char* kVersion = "1.3.0";
+const char* kVersion = "2026.08.1";  // schema AAAA.MM.nn
 
 int cmdConvert(const std::vector<std::string>& args);  // definita più avanti
+int cmdSetup();  // definita più avanti
 
 std::string getEnv(const char* name) {
     const char* v = std::getenv(name);
@@ -110,6 +111,7 @@ void usage() {
         << "  meetingrec minutes  --transcript file.txt [--output minuta.md|minuta.odt]\n"
         << "                      [--title T] [--attendees A,B] [--date YYYY-MM-DD] [--format md|odt]\n"
         << "  meetingrec download-models [--dir PATH] [--vae-only | --lm-only]\n"
+        << "  meetingrec setup   (scarica automaticamente asr_infer + modelli GGUF)\n"
         << "  meetingrec convert --input in.wav|mp3|flac --output out.wav\n"
         << "                      [--rate HZ] [--channels N]\n"
         << "  meetingrec all      --device N [--duration SEC] [--output-dir DIR]\n"
@@ -475,6 +477,15 @@ int settingsMenu() {
 
 int interactiveMenu() {
     tui::banner();
+
+    // Plug and play: se mancano componenti VibeVoice, scaricali automaticamente.
+    if (g_cfg.mode == "vibeasr" &&
+        (g_cfg.vibeasrBin.empty() || g_cfg.vibeasrVae.empty() || g_cfg.vibeasrLm.empty())) {
+        tui::warn("Componenti VibeVoice mancanti: download automatico in corso...");
+        cmdSetup();
+        tui::newline();
+    }
+
     for (;;) {
         tui::header(" MENU PRINCIPALE ");
         std::cout
@@ -487,7 +498,7 @@ int interactiveMenu() {
             << "  Strumenti:\n"
             << "    5) Configurazione (sotto-menu)\n"
             << "    6) Elenca i dispositivi audio\n"
-            << "    7) Scarica i modelli VibeVoice (GGUF)\n"
+            << "    7) Setup automatico (scarica asr_infer + modelli)\n"
             << "    8) Converti audio (mp3/flac -> wav)\n"
             << "    9) Esci\n"
             << "Scelta: " << std::flush;
@@ -512,7 +523,7 @@ int interactiveMenu() {
         } else if (line == "6") {
             cmdList();
         } else if (line == "7") {
-            cmdDownloadModels({});
+            cmdSetup();
         } else if (line == "8") {
             tui::header(" CONVERSIONE AUDIO ");
             std::string in;
@@ -529,6 +540,73 @@ int interactiveMenu() {
             tui::warn("Scelta non valida.");
         }
     }
+}
+
+// Callback di progresso per i download.
+void dlProgress(uint64_t cur, uint64_t total) {
+    std::string pct;
+    if (total > 0) {
+        char b[16];
+        std::snprintf(b, sizeof(b), "%.1f%%", 100.0 * cur / total);
+        pct = b;
+    }
+    tui::progress("  " + fmtSize(cur) + " / " + fmtSize(total) + "  " + pct);
+}
+
+// Scarica il binario asr_infer mancante dalla release GitHub di meetingrec.
+bool ensureAsrInfer(std::string& err) {
+    if (!g_cfg.vibeasrBin.empty()) return true;
+    std::error_code ec;
+    std::filesystem::create_directories("vibeasr/build/bin", ec);
+    if (ec) {
+        err = "Impossibile creare vibeasr/build/bin: " + ec.message();
+        return false;
+    }
+#ifdef _WIN32
+    const std::string asset = "asr_infer-windows-x64.exe";
+    const std::string dest = "vibeasr/build/bin/asr_infer.exe";
+#else
+    const std::string asset = "asr_infer-linux-x64";
+    const std::string dest = "vibeasr/build/bin/asr_infer";
+#endif
+    const std::string url = std::string("https://github.com/euplea/meetingrec/releases/download/v") +
+                            kVersion + "/" + asset;
+    tui::section("Download " + asset + " (VibeASR.cpp)...");
+    if (!downloadFile(url, dest, 0, dlProgress, err)) return false;
+#ifndef _WIN32
+    std::error_code pec;
+    std::filesystem::permissions(
+        dest, std::filesystem::perms::owner_exec | std::filesystem::perms::group_exec |
+                  std::filesystem::perms::others_exec,
+        std::filesystem::perm_options::add, pec);
+#endif
+    tui::clearLine();
+    g_cfg.vibeasrBin = dest;
+    tui::ok("asr_infer pronto: " + dest);
+    return true;
+}
+
+int cmdSetup() {
+    tui::header(" SETUP AUTOMATICO VibeVoice ");
+    if (!g_cfg.vibeasrBin.empty() && !g_cfg.vibeasrVae.empty() && !g_cfg.vibeasrLm.empty()) {
+        tui::ok("Niente da scaricare: asr_infer e modelli GGUF gia presenti.");
+        return 0;
+    }
+    std::string err;
+    if (!ensureAsrInfer(err)) {
+        tui::error(err);
+        return 1;
+    }
+    if (g_cfg.vibeasrVae.empty() || g_cfg.vibeasrLm.empty()) {
+        if (cmdDownloadModels({}) != 0) {
+            tui::error("Download dei modelli GGUF fallito.");
+            return 1;
+        }
+    }
+    g_cfg.save();
+    tui::ok("Tutto pronto per la trascrizione locale!");
+    tui::info("Ora puoi usare: meetingrec all --duration 3600");
+    return 0;
 }
 
 int cmdConvert(const std::vector<std::string>& args) {
@@ -598,6 +676,8 @@ int main(int argc, char** argv) {
                 rc = cmdMinutes(args);
             else if (cmd == "download-models" || cmd == "dl")
                 rc = cmdDownloadModels(args);
+            else if (cmd == "setup")
+                rc = cmdSetup();
             else if (cmd == "convert")
                 rc = cmdConvert(args);
             else if (cmd == "all")
