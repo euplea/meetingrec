@@ -209,6 +209,13 @@ export VIBEASR_THREADS=4
 
 Su Windows: `set VIBE_VOICE_MODE=vibeasr` ecc.
 
+Per forzare la lingua italiana (o qualsiasi altra) aggiungi `--language it`
+da riga di comando, oppure
+```json
+"language": "it"
+```
+in `meetingrec.json` (voce 10 nel menu Configurazione).
+
 ### Hotwords
 
 Migliorano l'accuratezza su nomi, acronimi e termini tecnici:
