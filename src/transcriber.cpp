@@ -77,28 +77,87 @@ bool fileExistsNonEmpty(const std::string& path) {
 
 std::string quoteArg(const std::string& s) { return "\"" + s + "\""; }
 
-// Runs a shell command, captures stdout, and redirects stderr to a temp file.
+#ifdef _WIN32
+std::wstring wide(const std::string& s) {
+    if (s.empty()) return L"";
+    const int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, nullptr, 0);
+    std::wstring w(static_cast<size_t>(n - 1), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, &w[0], n);
+    return w;
+}
+#endif
+
+// Esegue un comando catturando stdout; stderr reindirizzato su file.
+// Windows: CreateProcessW diretto (NON passa da cmd.exe, evita i problemi di
+// parsing delle virgolette del primo token). POSIX: popen via shell.
 bool runCommandCapture(const std::string& cmd, const std::string& stderrFile,
                        std::string& stdoutOut, std::string& stderrOut, int& exitCode) {
-    const std::string full = cmd + " 2>" + quoteArg(stderrFile);
 #ifdef _WIN32
-    FILE* p = _popen(full.c_str(), "r");
-#else
-    FILE* p = popen(full.c_str(), "r");
-#endif
-    if (!p) return false;
+    // cmd = "<exe>" <args...>  — estrae il programma (primo token quotato).
+    std::string exe, argsLine;
+    if (!cmd.empty() && cmd[0] == '"') {
+        const size_t end = cmd.find('"', 1);
+        if (end == std::string::npos) return false;
+        exe = cmd.substr(1, end - 1);
+        argsLine = cmd.substr(end + 1);
+    } else {
+        const size_t sp = cmd.find(' ');
+        if (sp == std::string::npos) {
+            exe = cmd;
+        } else {
+            exe = cmd.substr(0, sp);
+            argsLine = cmd.substr(sp);
+        }
+    }
+    if (exe.empty()) return false;
+
+    SECURITY_ATTRIBUTES sa;
+    sa.nLength = sizeof(sa);
+    sa.bInheritHandle = TRUE;
+    sa.lpSecurityDescriptor = nullptr;
+
+    HANDLE hRead = nullptr, hWrite = nullptr;
+    if (!CreatePipe(&hRead, &hWrite, &sa, 0)) return false;
+    SetHandleInformation(hRead, HANDLE_FLAG_INHERIT, 0);
+
+    HANDLE hErr = CreateFileW(wide(stderrFile).c_str(), GENERIC_WRITE, FILE_SHARE_READ, &sa,
+                              CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (hErr == INVALID_HANDLE_VALUE) {
+        CloseHandle(hRead);
+        CloseHandle(hWrite);
+        return false;
+    }
+
+    STARTUPINFOW si;
+    std::memset(&si, 0, sizeof(si));
+    si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESTDHANDLES;
+    si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+    si.hStdOutput = hWrite;
+    si.hStdError = hErr;
+
+    std::wstring cmdLineW = wide(exe + argsLine);
+    PROCESS_INFORMATION pi;
+    std::memset(&pi, 0, sizeof(pi));
+
+    const BOOL ok = CreateProcessW(wide(exe).c_str(), &cmdLineW[0], nullptr, nullptr, TRUE,
+                                   0, nullptr, nullptr, &si, &pi);
+    CloseHandle(hWrite);
+    CloseHandle(hErr);
+    if (!ok) return false;
 
     stdoutOut.clear();
     char buf[4096];
-    size_t n;
-    while ((n = std::fread(buf, 1, sizeof(buf), p)) > 0) stdoutOut.append(buf, n);
+    DWORD n = 0;
+    while (ReadFile(hRead, buf, sizeof(buf), &n, nullptr) && n > 0) stdoutOut.append(buf, n);
+    CloseHandle(hRead);
 
-#ifdef _WIN32
-    exitCode = _pclose(p);
-#else
-    const int rc = pclose(p);
-    exitCode = WIFEXITED(rc) ? WEXITSTATUS(rc) : -1;
-#endif
+    WaitForSingleObject(pi.hProcess, INFINITE);
+    DWORD code = 0;
+    GetExitCodeProcess(pi.hProcess, &code);
+    exitCode = static_cast<int>(code);
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
 
     std::ifstream f(stderrFile, std::ios::binary);
     std::stringstream ss;
@@ -107,6 +166,27 @@ bool runCommandCapture(const std::string& cmd, const std::string& stderrFile,
     f.close();
     std::remove(stderrFile.c_str());
     return true;
+#else
+    const std::string full = cmd + " 2>" + quoteArg(stderrFile);
+    FILE* p = popen(full.c_str(), "r");
+    if (!p) return false;
+
+    stdoutOut.clear();
+    char buf[4096];
+    size_t rd;
+    while ((rd = std::fread(buf, 1, sizeof(buf), p)) > 0) stdoutOut.append(buf, rd);
+
+    const int rc = pclose(p);
+    exitCode = WIFEXITED(rc) ? WEXITSTATUS(rc) : -1;
+
+    std::ifstream f(stderrFile, std::ios::binary);
+    std::stringstream ss;
+    ss << f.rdbuf();
+    stderrOut = ss.str();
+    f.close();
+    std::remove(stderrFile.c_str());
+    return true;
+#endif
 }
 
 bool transcribeVibeAsr(const TranscribeOptions& opts, std::string& textOut,
@@ -201,14 +281,6 @@ bool transcribeVibeAsr(const TranscribeOptions& opts, std::string& textOut,
 // Trasporto HTTP via WinHTTP (nativo Windows, nessuna dipendenza esterna).
 // ---------------------------------------------------------------------------
 
-std::wstring wide(const std::string& s) {
-    if (s.empty()) return L"";
-    const int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, nullptr, 0);
-    std::wstring w(static_cast<size_t>(n - 1), L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, &w[0], n);
-    return w;
-}
-
 bool transcribeHttp(const TranscribeOptions& opts, std::string& textOut,
                     std::string& error) {
     // 1) Legge il file audio in memoria.
@@ -275,7 +347,7 @@ bool transcribeHttp(const TranscribeOptions& opts, std::string& textOut,
     const bool https = (uc.nScheme == INTERNET_SCHEME_HTTPS);
 
     // 4) Effettua la richiesta.
-    HINTERNET hSession = WinHttpOpen(L"meetingrec/2026.08.1", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+    HINTERNET hSession = WinHttpOpen(L"meetingrec/2026.08.2", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
                                      WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (!hSession) {
         error = "WinHttpOpen fallito (0x" + std::to_string(GetLastError()) + ")";

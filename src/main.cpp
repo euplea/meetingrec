@@ -21,7 +21,7 @@ namespace {
 
 Config g_cfg;  // configurazione globale (meetingrec.json)
 
-const char* kVersion = "2026.08.1";  // schema AAAA.MM.nn
+const char* kVersion = "2026.08.2";  // schema AAAA.MM.nn
 
 int cmdConvert(const std::vector<std::string>& args);  // definita più avanti
 int cmdSetup();  // definita più avanti
@@ -569,8 +569,8 @@ bool ensureAsrInfer(std::string& err) {
     const std::string asset = "asr_infer-linux-x64";
     const std::string dest = "vibeasr/build/bin/asr_infer";
 #endif
-    const std::string url = std::string("https://github.com/euplea/meetingrec/releases/download/v") +
-                            kVersion + "/" + asset;
+    const std::string url =
+        "https://github.com/euplea/meetingrec/releases/latest/download/" + asset;
     tui::section("Download " + asset + " (VibeASR.cpp)...");
     if (!downloadFile(url, dest, 0, dlProgress, err)) return false;
 #ifndef _WIN32
