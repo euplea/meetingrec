@@ -133,6 +133,16 @@ void clearLine() {
 
 void newline() { std::cout << "\n"; }
 
+void ding() {
+    std::cout << '\a' << std::flush;  // BEL (funziona su ogni terminale)
+#ifdef _WIN32
+    // Due toni brevi tramite lo speaker di sistema (kernel32, nessuna dipendenza).
+    Beep(880, 220);
+    Sleep(40);
+    Beep(1320, 220);
+#endif
+}
+
 bool isDoubleClicked() {
 #ifdef _WIN32
     DWORD pids[2] = {0, 0};

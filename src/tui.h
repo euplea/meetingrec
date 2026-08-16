@@ -29,6 +29,9 @@ void progress(const std::string& text);          // riga aggiornabile con \r
 void clearLine();
 void newline();
 
+// Emette un avviso sonoro (BEL + beep di sistema su Windows).
+void ding();
+
 // Su Windows: se il programma è stato avviato con doppio clic (console propria,
 // nessun terminale attorno), attende un INVIO prima di chiudere la finestra.
 // No-op su Linux/macOS e quando lanciato da un terminale o uno script.

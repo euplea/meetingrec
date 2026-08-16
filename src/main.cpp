@@ -21,7 +21,7 @@ namespace {
 
 Config g_cfg;  // configurazione globale (meetingrec.json)
 
-const char* kVersion = "2026.08.6";  // schema AAAA.MM.nn
+const char* kVersion = "2026.08.7";  // schema AAAA.MM.nn
 
 int cmdConvert(const std::vector<std::string>& args);  // definita più avanti
 int cmdSetup();  // definita più avanti
@@ -210,6 +210,7 @@ int cmdTranscribe(const std::vector<std::string>& args) {
         tui::error(err);
         return 1;
     }
+    tui::ding();
     const std::string out = getArg(args, "--output", g_cfg.outputDir + "/transcript.txt");
     // Crea la cartella di destinazione se non esiste.
     {
@@ -324,6 +325,7 @@ int cmdAll(const std::vector<std::string>& args) {
         tui::error(err);
         return 1;
     }
+    tui::ding();
     try {
         std::ofstream tf(txt);
         if (!tf) throw std::runtime_error("impossibile aprire " + txt);
@@ -350,6 +352,7 @@ int cmdAll(const std::vector<std::string>& args) {
     }
 
     tui::ok("Pipeline completata!");
+    tui::ding();
     tui::info("  audio:       " + wav);
     tui::info("  trascrizione: " + txt);
     tui::info("  minuta:      " + md);

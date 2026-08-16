@@ -3,6 +3,8 @@
 #include "audio_convert.h"
 #include "tui.h"
 
+#include <atomic>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -10,6 +12,7 @@
 #include <iterator>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <vector>
 
 #ifndef _WIN32
@@ -283,11 +286,34 @@ bool transcribeVibeAsr(const TranscribeOptions& opts, std::string& textOut,
     }
 
     std::string combined;
+    std::atomic<bool> done{false};
+    std::thread ticker;
+
+    // Spinner/elapsed per il caso a chunk singolo (nessun avanzamento %).
+    if (chunkFiles.size() == 1) {
+        ticker = std::thread([&done]() {
+            const auto st = std::chrono::steady_clock::now();
+            while (!done.load()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(400));
+                const double el = std::chrono::duration<double>(
+                                      std::chrono::steady_clock::now() - st)
+                                      .count();
+                const int mm = static_cast<int>(el) / 60, ss = static_cast<int>(el) % 60;
+                char b[32];
+                std::snprintf(b, sizeof(b), "%02d:%02d", mm, ss);
+                tui::progress(std::string("Trascrizione in corso... ") + b);
+            }
+        });
+    }
+
+    const auto t0 = std::chrono::steady_clock::now();
     for (size_t i = 0; i < chunkFiles.size(); ++i) {
         std::string out, errOut;
         int exitCode = -1;
         if (!runOne(chunkFiles[i], out, errOut, exitCode)) {
             error = "Impossibile eseguire il processo '" + bin + "' (verifica che sia nel PATH)";
+            done = true;
+            if (ticker.joinable()) ticker.join();
             for (auto& c : chunkFiles) if (c != audioPath) std::remove(c.c_str());
             if (!tempWav.empty()) std::remove(tempWav.c_str());
             return false;
@@ -303,13 +329,32 @@ bool transcribeVibeAsr(const TranscribeOptions& opts, std::string& textOut,
                          "  - riduci la durata del chunk: --vibeasr-chunk 15 (o 'vibeasr_chunk_sec' in meetingrec.json)\n"
                          "  - chiudi altri programmi\n";
             }
+            done = true;
+            if (ticker.joinable()) ticker.join();
             for (auto& c : chunkFiles) if (c != audioPath) std::remove(c.c_str());
             if (!tempWav.empty()) std::remove(tempWav.c_str());
             return false;
         }
         if (!combined.empty()) combined += " ";
         combined += trim(out);
+
+        // Avanzamento + ETA (solo con più chunk).
+        if (chunkFiles.size() > 1) {
+            const double elapsed =
+                std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+            const double perChunk = elapsed / (i + 1);
+            const double eta = perChunk * (chunkFiles.size() - i - 1);
+            char pb[16];
+            std::snprintf(pb, sizeof(pb), "%.0f%%", 100.0 * (i + 1) / chunkFiles.size());
+            tui::progress("Trascrizione: chunk " + std::to_string(i + 1) + "/" +
+                          std::to_string(chunkFiles.size()) + " (" + pb + ")  ETA " +
+                          std::to_string(static_cast<int>(eta)) + " s");
+        }
     }
+
+    done = true;
+    if (ticker.joinable()) ticker.join();
+    tui::clearLine();
 
     // Pulizia dei file temporanei.
     for (auto& c : chunkFiles) if (c != audioPath) std::remove(c.c_str());
@@ -394,7 +439,7 @@ bool transcribeHttp(const TranscribeOptions& opts, std::string& textOut,
     const bool https = (uc.nScheme == INTERNET_SCHEME_HTTPS);
 
     // 4) Effettua la richiesta.
-    HINTERNET hSession = WinHttpOpen(L"meetingrec/2026.08.6", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+    HINTERNET hSession = WinHttpOpen(L"meetingrec/2026.08.7", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
                                      WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (!hSession) {
         error = "WinHttpOpen fallito (0x" + std::to_string(GetLastError()) + ")";
