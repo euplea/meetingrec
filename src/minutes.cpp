@@ -381,7 +381,7 @@ std::string renderOdt(const MinuteDoc& d) {
         "xmlns:dc=\"http://purl.org/dc/elements/1.1/\" "
         "office:version=\"1.2\">\n"
         "<office:meta>\n"
-        "  <meta:generator>meetingrec 1.2.0</meta:generator>\n"
+        "  <meta:generator>meetingrec 1.3.0</meta:generator>\n"
         "  <dc:title>" + xmlEscape(d.title) + "</dc:title>\n"
         "</office:meta>\n"
         "</office:document-meta>\n";

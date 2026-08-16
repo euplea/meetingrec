@@ -7,6 +7,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_executable(meetingrec
     src/audio_convert.cpp
+    src/discover.cpp
     src/config.cpp
     src/downloader.cpp
     src/main.cpp

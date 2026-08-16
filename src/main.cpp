@@ -10,6 +10,7 @@
 
 #include "audio_convert.h"
 #include "config.h"
+#include "discover.h"
 #include "downloader.h"
 #include "minutes.h"
 #include "recorder.h"
@@ -20,7 +21,7 @@ namespace {
 
 Config g_cfg;  // configurazione globale (meetingrec.json)
 
-const char* kVersion = "1.2.0";
+const char* kVersion = "1.3.0";
 
 int cmdConvert(const std::vector<std::string>& args);  // definita più avanti
 
@@ -560,6 +561,14 @@ int main(int argc, char** argv) {
     if (tui::ensureWindowsTerminal()) return 0;
 
     g_cfg.load();  // carica meetingrec.json se presente
+
+    // Auto-discovery: binario asr_infer e modelli GGUF in posizioni note.
+    if (discoverVibeasr(g_cfg) && tui::colorEnabled()) {
+        tui::info("VibeASR rilevato automaticamente:");
+        if (!g_cfg.vibeasrBin.empty()) tui::info("  bin: " + g_cfg.vibeasrBin);
+        if (!g_cfg.vibeasrVae.empty()) tui::info("  vae: " + g_cfg.vibeasrVae);
+        if (!g_cfg.vibeasrLm.empty()) tui::info("  lm:  " + g_cfg.vibeasrLm);
+    }
 
     std::vector<std::string> args(argv + 1, argv + argc);
     int rc = 0;
