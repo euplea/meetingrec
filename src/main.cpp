@@ -21,7 +21,7 @@ namespace {
 
 Config g_cfg;  // configurazione globale (meetingrec.json)
 
-const char* kVersion = "2026.08.2";  // schema AAAA.MM.nn
+const char* kVersion = "2026.08.3";  // schema AAAA.MM.nn
 
 int cmdConvert(const std::vector<std::string>& args);  // definita più avanti
 int cmdSetup();  // definita più avanti
@@ -190,6 +190,12 @@ int cmdTranscribe(const std::vector<std::string>& args) {
         tui::error("--input richiesto.");
         return 1;
     }
+    std::error_code fec;
+    if (!std::filesystem::exists(o.inputPath, fec)) {
+        tui::error("Audio non trovato: " + o.inputPath);
+        tui::info("Registra prima con la Fase 1, oppure usa --input con un file esistente.");
+        return 1;
+    }
     fillTranscribeCommon(o, args);
 
     tui::section("Trascrizione in corso (backend: " + o.mode + ")...");
@@ -215,6 +221,12 @@ int cmdMinutes(const std::vector<std::string>& args) {
     const std::string inPath = getArg(args, "--transcript");
     if (inPath.empty()) {
         tui::error("--transcript richiesto.");
+        return 1;
+    }
+    std::error_code fec;
+    if (!std::filesystem::exists(inPath, fec)) {
+        tui::error("Trascrizione non trovata: " + inPath);
+        tui::info("Esegui prima la Fase 2 (trascrizione) oppure la Fase 4 (pipeline completa).");
         return 1;
     }
     std::string content;
@@ -510,11 +522,27 @@ int interactiveMenu() {
             cmdRecord({});
         } else if (line == "2") {
             tui::header(" FASE 2 - Trascrizione ");
-            std::vector<std::string> a = {"--input", g_cfg.outputDir + "/audio.wav"};
-            cmdTranscribe(a);
+            const std::string audio = g_cfg.outputDir + "/audio.wav";
+            std::error_code fec;
+            if (!std::filesystem::exists(audio, fec)) {
+                tui::error("Nessun audio registrato: " + audio);
+                tui::info("Esegui prima la Fase 1 (registrazione).");
+            } else {
+                std::vector<std::string> a = {"--input", audio};
+                cmdTranscribe(a);
+            }
         } else if (line == "3") {
             tui::header(" FASE 3 - Minuta ");
-            std::vector<std::string> a = {"--transcript", g_cfg.outputDir + "/transcript.txt"};
+            const std::string txt = g_cfg.outputDir + "/transcript.txt";
+            const std::string audio = g_cfg.outputDir + "/audio.wav";
+            std::error_code fec;
+            if (!std::filesystem::exists(txt, fec) && std::filesystem::exists(audio, fec)) {
+                // Plug and play: la trascrizione manca, la genero dall'audio registrato.
+                tui::warn("Trascrizione mancante: la genero dall'audio registrato...");
+                std::vector<std::string> a = {"--input", audio};
+                cmdTranscribe(a);
+            }
+            std::vector<std::string> a = {"--transcript", txt};
             cmdMinutes(a);
         } else if (line == "4") {
             cmdAll({});
