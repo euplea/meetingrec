@@ -142,7 +142,7 @@ Output in `riunione/`: `audio.wav`, `transcript.txt`, `minuta.md`.
 
 | Variabile                 | Flag              | Default                                                   |
 |---------------------------|-------------------|-----------------------------------------------------------|
-| `VIBE_VOICE_MODE`         | `--mode`          | `openai`                                                  |
+| `VIBE_VOICE_MODE`         | `--mode`          | `vibeasr` (locale)                                         |
 | `VIBE_VOICE_URL`          | `--api-url`       | `https://api.openai.com/v1/audio/transcriptions`          |
 | `VIBE_VOICE_API_KEY`      | `--api-key`       | _(vuoto)_                                                 |
 | `VIBE_VOICE_MODEL`        | `--model`         | `whisper-1`                                               |
@@ -153,11 +153,11 @@ Output in `riunione/`: `audio.wav`, `transcript.txt`, `minuta.md`.
 | `VIBEASR_LM_MODEL`        | `--vibeasr-lm`    | _(richiesto per vibeasr)_                                 |
 | `VIBEASR_THREADS`         | `--vibeasr-threads`| `4`                                                      |
 | `VIBEASR_CONTEXT`         | `--vibeasr-context`| _(vuoto)_                                                |
-| `VIBEASR_FORMAT`          | `--vibeasr-format`| `text`                                                    |
+| `VIBEASR_FORMAT`          | `--vibeasr-format`| `json` (relatori+tempi)                                    |
 
-Modalità `--mode`:
+Modalità `--mode` (default **`vibeasr`**):
 
-- **`vibeasr`** → VibeASR.cpp locale (subprocess `asr_infer`).
+- **`vibeasr`** → VibeASR.cpp locale (subprocess `asr_infer`). Default.
 - **`openai`** → POST multipart/form-data (contratto Whisper API).
 - **`raw`** → POST del file come corpo raw (`Content-Type: audio/wav`).
 

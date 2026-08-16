@@ -108,7 +108,7 @@ Durante la registrazione: **INVIO** o **Ctrl+C** per fermare.
 |---|---|---|
 | `--input file.wav` | — | File audio (richiesto) |
 | `--output file.txt` | `transcript.txt` | File di testo |
-| `--mode` | `openai` | `vibeasr` (locale) / `openai` (multipart) / `raw` (body grezzo) |
+| `--mode` | `vibeasr` | **default `vibeasr`** (locale) / `openai` (multipart) / `raw` (body grezzo) |
 | `--api-url` | OpenAI | Endpoint HTTP |
 | `--api-key` | env | Chiave API |
 | `--model` | `whisper-1` | Modello HTTP |
@@ -117,7 +117,7 @@ Durante la registrazione: **INVIO** o **Ctrl+C** per fermare.
 | `--vibeasr-vae` / `--vibeasr-lm` | — | Modelli GGUF |
 | `--vibeasr-threads` | 4 | Thread CPU |
 | `--vibeasr-context` | — | Hotwords |
-| `--vibeasr-format` | `text` | `text` (1.5B) / `json` (7B, relatori+tempi) |
+| `--vibeasr-format` | `json` | **default `json`** (relatori+tempi) / `text` (1.5B) |
 
 ### 4.4 `minutes`
 
@@ -221,7 +221,7 @@ meetingrec transcribe --input riunione.wav --language it
 | `VIBEASR_LM_MODEL` | `--vibeasr-lm` | GGUF LM |
 | `VIBEASR_THREADS` | `--vibeasr-threads` | thread |
 | `VIBEASR_CONTEXT` | `--vibeasr-context` | hotwords |
-| `VIBEASR_FORMAT` | `--vibeasr-format` | `text` / `json` |
+| `VIBEASR_FORMAT` | `--vibeasr-format` | `json` / `text` |
 
 ---
 

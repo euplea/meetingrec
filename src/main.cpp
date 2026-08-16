@@ -71,7 +71,8 @@ void usage() {
         << "  meetingrec list\n"
         << "  meetingrec record  [--device N] [--output file.wav] [--duration SEC] [--rate HZ] [--channels N]\n"
         << "  meetingrec transcribe --input file.wav [--output file.txt] [--api-url URL]\n"
-        << "                      [--api-key KEY] [--model NAME] [--mode openai|raw|vibeasr]\n"
+        << "                      [--api-key KEY] [--model NAME] [--mode vibeasr|openai|raw]\n"
+        << "                                  (default: vibeasr - VibeVoice locale)\n"
         << "                      [--language LANG] [--response-key KEY]\n"
         << "                      [--vibeasr-bin PATH] [--vibeasr-vae F.gguf] [--vibeasr-lm F.gguf]\n"
         << "                      [--vibeasr-threads N] [--vibeasr-context TEXT] [--vibeasr-format text|json]\n"
@@ -98,7 +99,7 @@ void fillVibeasrOptions(TranscribeOptions& o, const std::vector<std::string>& ar
     o.vibeasrThreads = toInt(getArg(args, "--vibeasr-threads", getEnv("VIBEASR_THREADS")), 4);
     o.vibeasrContext = getArg(args, "--vibeasr-context", getEnv("VIBEASR_CONTEXT"));
     o.vibeasrFormat = getArg(args, "--vibeasr-format", getEnv("VIBEASR_FORMAT"));
-    if (o.vibeasrFormat.empty()) o.vibeasrFormat = "text";
+    if (o.vibeasrFormat.empty()) o.vibeasrFormat = "json";  // default: strutturato (relatori+tempi)
 }
 
 void fillTranscribeCommon(TranscribeOptions& o, const std::vector<std::string>& args) {
@@ -108,7 +109,7 @@ void fillTranscribeCommon(TranscribeOptions& o, const std::vector<std::string>& 
     o.model = getArg(args, "--model", getEnv("VIBE_VOICE_MODEL"));
     if (o.model.empty()) o.model = "whisper-1";
     o.mode = getArg(args, "--mode", getEnv("VIBE_VOICE_MODE"));
-    if (o.mode.empty()) o.mode = "openai";
+    if (o.mode.empty()) o.mode = "vibeasr";  // default: VibeVoice locale
     o.language = getArg(args, "--language", getEnv("VIBE_VOICE_LANGUAGE"));
     o.responseKey = getArg(args, "--response-key", getEnv("VIBE_VOICE_RESPONSE_KEY"));
     if (o.responseKey.empty()) o.responseKey = "text";
