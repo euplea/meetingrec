@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "config.h"
 #include "downloader.h"
 #include "minutes.h"
 #include "recorder.h"
@@ -15,6 +16,8 @@
 #include "tui.h"
 
 namespace {
+
+Config g_cfg;  // configurazione globale (meetingrec.json)
 
 std::string getEnv(const char* name) {
     const char* v = std::getenv(name);
@@ -53,6 +56,27 @@ double toDouble(const std::string& s, double def) {
     }
 }
 
+// Priorità: flag CLI > variabile d'ambiente > configurazione (JSON) > default.
+std::string pick(const std::vector<std::string>& args, const std::string& flag,
+                 const std::string& env, const std::string& cfgVal,
+                 const std::string& def) {
+    std::string v = getArg(args, flag);
+    if (!v.empty()) return v;
+    v = getEnv(env.c_str());
+    if (!v.empty()) return v;
+    if (!cfgVal.empty()) return cfgVal;
+    return def;
+}
+
+int pickInt(const std::vector<std::string>& args, const std::string& flag,
+            const std::string& env, int cfgVal, int def) {
+    std::string v = getArg(args, flag);
+    if (!v.empty()) return toInt(v, def);
+    v = getEnv(env.c_str());
+    if (!v.empty()) return toInt(v, def);
+    return cfgVal;
+}
+
 std::string fmtSize(uint64_t bytes) {
     char buf[32];
     if (bytes >= 1024ull * 1024 * 1024)
@@ -86,6 +110,8 @@ void usage() {
         << "  VIBE_VOICE_LANGUAGE  VIBE_VOICE_RESPONSE_KEY\n"
         << "  VIBEASR_BIN  VIBEASR_VAE_MODEL  VIBEASR_LM_MODEL  VIBEASR_THREADS\n"
         << "  VIBEASR_CONTEXT  VIBEASR_FORMAT\n\n"
+        << "File di configurazione: meetingrec.json (JSON) nella cartella corrente.\n"
+        << "Priorità: flag CLI > variabili d'ambiente > meetingrec.json > default.\n\n"
         << "Nota: su Windows, senza --device viene registrato l'audio di sistema via\n"
         << "loopback WASAPI (la voce di Teams/Zoom). Con 'list' puoi scegliere un\n"
         << "microfono specifico. Su Linux seleziona il dispositivo con 'monitor'.\n"
@@ -93,26 +119,26 @@ void usage() {
 }
 
 void fillVibeasrOptions(TranscribeOptions& o, const std::vector<std::string>& args) {
-    o.vibeasrBin = getArg(args, "--vibeasr-bin", getEnv("VIBEASR_BIN"));
-    o.vibeasrVaeModel = getArg(args, "--vibeasr-vae", getEnv("VIBEASR_VAE_MODEL"));
-    o.vibeasrLmModel = getArg(args, "--vibeasr-lm", getEnv("VIBEASR_LM_MODEL"));
-    o.vibeasrThreads = toInt(getArg(args, "--vibeasr-threads", getEnv("VIBEASR_THREADS")), 4);
-    o.vibeasrContext = getArg(args, "--vibeasr-context", getEnv("VIBEASR_CONTEXT"));
-    o.vibeasrFormat = getArg(args, "--vibeasr-format", getEnv("VIBEASR_FORMAT"));
-    if (o.vibeasrFormat.empty()) o.vibeasrFormat = "json";  // default: strutturato (relatori+tempi)
+    o.vibeasrBin = pick(args, "--vibeasr-bin", "VIBEASR_BIN", g_cfg.vibeasrBin, "");
+    o.vibeasrVaeModel = pick(args, "--vibeasr-vae", "VIBEASR_VAE_MODEL", g_cfg.vibeasrVae, "");
+    o.vibeasrLmModel = pick(args, "--vibeasr-lm", "VIBEASR_LM_MODEL", g_cfg.vibeasrLm, "");
+    o.vibeasrThreads =
+        pickInt(args, "--vibeasr-threads", "VIBEASR_THREADS", g_cfg.vibeasrThreads, 4);
+    o.vibeasrContext =
+        pick(args, "--vibeasr-context", "VIBEASR_CONTEXT", g_cfg.vibeasrContext, "");
+    o.vibeasrFormat =
+        pick(args, "--vibeasr-format", "VIBEASR_FORMAT", g_cfg.vibeasrFormat, "json");
 }
 
 void fillTranscribeCommon(TranscribeOptions& o, const std::vector<std::string>& args) {
-    o.apiUrl = getArg(args, "--api-url", getEnv("VIBE_VOICE_URL"));
-    if (o.apiUrl.empty()) o.apiUrl = "https://api.openai.com/v1/audio/transcriptions";
-    o.apiKey = getArg(args, "--api-key", getEnv("VIBE_VOICE_API_KEY"));
-    o.model = getArg(args, "--model", getEnv("VIBE_VOICE_MODEL"));
-    if (o.model.empty()) o.model = "whisper-1";
-    o.mode = getArg(args, "--mode", getEnv("VIBE_VOICE_MODE"));
-    if (o.mode.empty()) o.mode = "vibeasr";  // default: VibeVoice locale
-    o.language = getArg(args, "--language", getEnv("VIBE_VOICE_LANGUAGE"));
-    o.responseKey = getArg(args, "--response-key", getEnv("VIBE_VOICE_RESPONSE_KEY"));
-    if (o.responseKey.empty()) o.responseKey = "text";
+    o.apiUrl = pick(args, "--api-url", "VIBE_VOICE_URL", g_cfg.apiUrl,
+                    "https://api.openai.com/v1/audio/transcriptions");
+    o.apiKey = pick(args, "--api-key", "VIBE_VOICE_API_KEY", g_cfg.apiKey, "");
+    o.model = pick(args, "--model", "VIBE_VOICE_MODEL", g_cfg.apiModel, "whisper-1");
+    o.mode = pick(args, "--mode", "VIBE_VOICE_MODE", g_cfg.mode, "vibeasr");
+    o.language = pick(args, "--language", "VIBE_VOICE_LANGUAGE", g_cfg.language, "");
+    o.responseKey =
+        pick(args, "--response-key", "VIBE_VOICE_RESPONSE_KEY", g_cfg.responseKey, "text");
     fillVibeasrOptions(o, args);
 }
 
@@ -132,7 +158,7 @@ int cmdList() {
 int cmdRecord(const std::vector<std::string>& args) {
     RecordOptions o;
     o.deviceIndex = toInt(getArg(args, "--device"), -1);
-    o.outputPath = getArg(args, "--output", "meeting.wav");
+    o.outputPath = getArg(args, "--output", g_cfg.outputDir + "/audio.wav");
     o.durationSeconds = toDouble(getArg(args, "--duration"), 0.0);
     o.sampleRate = toDouble(getArg(args, "--rate"), 16000.0);
     o.channels = toInt(getArg(args, "--channels"), 1);
@@ -194,10 +220,10 @@ int cmdMinutes(const std::vector<std::string>& args) {
 
     MinutesOptions o;
     o.transcriptText = content;
-    o.title = getArg(args, "--title", "Minuta riunione");
+    o.title = pick(args, "--title", "", g_cfg.title, "Minuta riunione");
     o.date = getArg(args, "--date");
     o.attendees = getArg(args, "--attendees");
-    o.outputPath = getArg(args, "--output", "minuta.md");
+    o.outputPath = getArg(args, "--output", g_cfg.outputDir + "/minuta.md");
 
     tui::section("Generazione minuta...");
     std::string err;
@@ -210,7 +236,7 @@ int cmdMinutes(const std::vector<std::string>& args) {
 }
 
 int cmdAll(const std::vector<std::string>& args) {
-    const std::string dir = getArg(args, "--output-dir", "meeting");
+    const std::string dir = pick(args, "--output-dir", "", g_cfg.outputDir, "meeting");
     std::error_code ec;
     std::filesystem::create_directories(dir, ec);
     if (ec) {
@@ -262,7 +288,7 @@ int cmdAll(const std::vector<std::string>& args) {
     // 3) Minuta
     MinutesOptions mo;
     mo.transcriptText = text;
-    mo.title = getArg(args, "--title", "Minuta riunione");
+    mo.title = pick(args, "--title", "", g_cfg.title, "Minuta riunione");
     mo.date = getArg(args, "--date");
     mo.attendees = getArg(args, "--attendees");
     mo.outputPath = md;
@@ -338,33 +364,135 @@ int cmdDownloadModels(const std::vector<std::string>& args) {
             return 1;
         }
         tui::ok("Scaricato: " + dest);
+
+        // Aggiorna la configurazione con i percorsi appena scaricati.
+        bool cfgChanged = false;
+        if (name.find("vae") != std::string::npos && g_cfg.vibeasrVae.empty()) {
+            g_cfg.vibeasrVae = dest;
+            cfgChanged = true;
+        }
+        if (name.find("lm") != std::string::npos && g_cfg.vibeasrLm.empty()) {
+            g_cfg.vibeasrLm = dest;
+            cfgChanged = true;
+        }
+        if (cfgChanged) g_cfg.save();
     }
 
     tui::ok("Modelli pronti in " + dir);
+    if (!g_cfg.vibeasrVae.empty() || !g_cfg.vibeasrLm.empty()) {
+        tui::info("Percorsi aggiornati in " + g_cfg.path);
+    }
     tui::info("Configura: VIBEASR_VAE_MODEL=" + dir + "/vibeasr-vae-encoder-i8_s.gguf");
     tui::info("           VIBEASR_LM_MODEL=" + dir + "/vibeasr-lm-i2_s-embed-q6_k.gguf");
     return 0;
 }
 
+std::string maskKey(const std::string& k) {
+    if (k.empty()) return "";
+    if (k.size() <= 4) return "****";
+    return k.substr(0, 4) + "****";
+}
+
+bool promptValue(const std::string& label, const std::string& current, std::string& out) {
+    std::cout << label << " [" << current << "]: " << std::flush;
+    std::string v;
+    std::getline(std::cin, v);
+    if (v.empty()) return false;  // INVIO = mantieni il valore corrente
+    out = v;
+    return true;
+}
+
+int settingsMenu() {
+    for (;;) {
+        tui::header(" CONFIGURAZIONE ");
+        std::cout
+            << "  1) Backend (vibeasr|openai|raw)  [" << g_cfg.mode << "]\n"
+            << "  2) Binario asr_infer             [" << g_cfg.vibeasrBin << "]\n"
+            << "  3) Modello GGUF VAE              [" << g_cfg.vibeasrVae << "]\n"
+            << "  4) Modello GGUF LM               [" << g_cfg.vibeasrLm << "]\n"
+            << "  5) Thread CPU                    [" << g_cfg.vibeasrThreads << "]\n"
+            << "  6) Formato (json|text)           [" << g_cfg.vibeasrFormat << "]\n"
+            << "  7) Hotwords (contesto)           [" << g_cfg.vibeasrContext << "]\n"
+            << "  8) URL API (openai/raw)          [" << g_cfg.apiUrl << "]\n"
+            << "  9) Chiave API                    [" << maskKey(g_cfg.apiKey) << "]\n"
+            << "  10) Lingua                       [" << g_cfg.language << "]\n"
+            << "  11) Cartella output              [" << g_cfg.outputDir << "]\n"
+            << "  12) Titolo minuta                [" << g_cfg.title << "]\n"
+            << "  13) Salva su " << g_cfg.path << "\n"
+            << "  14) Torna al menu principale\n"
+            << "Scelta: " << std::flush;
+
+        std::string line, v;
+        std::getline(std::cin, line);
+        if (line == "1") { if (promptValue("Backend", g_cfg.mode, v)) g_cfg.mode = v; }
+        else if (line == "2") { if (promptValue("Binario asr_infer", g_cfg.vibeasrBin, v)) g_cfg.vibeasrBin = v; }
+        else if (line == "3") { if (promptValue("Modello GGUF VAE", g_cfg.vibeasrVae, v)) g_cfg.vibeasrVae = v; }
+        else if (line == "4") { if (promptValue("Modello GGUF LM", g_cfg.vibeasrLm, v)) g_cfg.vibeasrLm = v; }
+        else if (line == "5") {
+            std::cout << "Thread CPU [" << g_cfg.vibeasrThreads << "]: " << std::flush;
+            std::getline(std::cin, v);
+            if (!v.empty()) g_cfg.vibeasrThreads = toInt(v, g_cfg.vibeasrThreads);
+        }
+        else if (line == "6") { if (promptValue("Formato (json|text)", g_cfg.vibeasrFormat, v)) g_cfg.vibeasrFormat = v; }
+        else if (line == "7") { if (promptValue("Hotwords (contesto)", g_cfg.vibeasrContext, v)) g_cfg.vibeasrContext = v; }
+        else if (line == "8") { if (promptValue("URL API", g_cfg.apiUrl, v)) g_cfg.apiUrl = v; }
+        else if (line == "9") { if (promptValue("Chiave API", maskKey(g_cfg.apiKey), v)) g_cfg.apiKey = v; }
+        else if (line == "10") { if (promptValue("Lingua", g_cfg.language, v)) g_cfg.language = v; }
+        else if (line == "11") { if (promptValue("Cartella output", g_cfg.outputDir, v)) g_cfg.outputDir = v; }
+        else if (line == "12") { if (promptValue("Titolo minuta", g_cfg.title, v)) g_cfg.title = v; }
+        else if (line == "13") {
+            if (g_cfg.save()) tui::ok("Configurazione salvata in " + g_cfg.path);
+            else tui::error("Impossibile salvare " + g_cfg.path);
+        }
+        else if (line == "14" || line.empty()) return 0;
+        else tui::warn("Scelta non valida.");
+    }
+}
+
 int interactiveMenu() {
     tui::banner();
     for (;;) {
+        tui::header(" MENU PRINCIPALE ");
         std::cout
-            << "\nScegli un'azione:\n"
-            << "  1) Registra l'audio di sistema (INVIO per fermare)\n"
-            << "  2) Elenca i dispositivi audio\n"
-            << "  3) Scarica i modelli VibeVoice (GGUF)\n"
-            << "  4) Registra + trascrivi + minuta (pipeline completa)\n"
-            << "  5) Esci\n"
+            << "  Passi singoli:\n"
+            << "    1) Registra l'audio (Fase 1)\n"
+            << "    2) Trascrivi l'audio (Fase 2)\n"
+            << "    3) Genera la minuta (Fase 3)\n"
+            << "  Pipeline completa:\n"
+            << "    4) Registra + Trascrivi + Minuta (1+2+3)\n"
+            << "  Strumenti:\n"
+            << "    5) Configurazione (sotto-menu)\n"
+            << "    6) Elenca i dispositivi audio\n"
+            << "    7) Scarica i modelli VibeVoice (GGUF)\n"
+            << "    8) Esci\n"
             << "Scelta: " << std::flush;
+
         std::string line;
         std::getline(std::cin, line);
-        if (line == "1") return cmdRecord({});
-        if (line == "2") return cmdList();
-        if (line == "3") return cmdDownloadModels({});
-        if (line == "4") return cmdAll({});
-        if (line == "5" || line.empty()) return 0;
-        tui::warn("Scelta non valida, riprova.");
+        if (line == "1") {
+            tui::header(" FASE 1 - Registrazione ");
+            cmdRecord({});
+        } else if (line == "2") {
+            tui::header(" FASE 2 - Trascrizione ");
+            std::vector<std::string> a = {"--input", g_cfg.outputDir + "/audio.wav"};
+            cmdTranscribe(a);
+        } else if (line == "3") {
+            tui::header(" FASE 3 - Minuta ");
+            std::vector<std::string> a = {"--transcript", g_cfg.outputDir + "/transcript.txt"};
+            cmdMinutes(a);
+        } else if (line == "4") {
+            cmdAll({});
+        } else if (line == "5") {
+            settingsMenu();
+        } else if (line == "6") {
+            cmdList();
+        } else if (line == "7") {
+            cmdDownloadModels({});
+        } else if (line == "8" || line.empty()) {
+            return 0;
+        } else {
+            tui::warn("Scelta non valida.");
+        }
     }
 }
 
@@ -375,6 +503,8 @@ int main(int argc, char** argv) {
 
     // Doppio clic su Windows: riapri in Windows Terminal (se disponibile).
     if (tui::ensureWindowsTerminal()) return 0;
+
+    g_cfg.load();  // carica meetingrec.json se presente
 
     std::vector<std::string> args(argv + 1, argv + argc);
     int rc = 0;
