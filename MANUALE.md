@@ -219,6 +219,72 @@ export VIBEASR_CONTEXT="Mario Rossi, progetto Alpha, QNAP, GDPR"
 
 ---
 
+## 5bis. Memoria RAM, durata chunk e qualità del WAV
+
+### Attenzione: ridurre la qualità del WAV NON riduce la RAM
+
+`asr_infer` (VibeASR.cpp) **ricampiona sempre l'audio in ingresso a 24 kHz
+float32** internamente. Quindi registrare o convertire a 8/16 kHz non cambia
+nulla: il VAE del modello processa comunque gli stessi campioni a 24 kHz.
+
+La **RAM usata dal VAE dipende solo dalla DURATA dell'audio** che gli viene
+passato, con questa formula approssimativa:
+
+```
+RAM VAE ≈ durata(secondi) × ~234 MB/s  (+ 512 MB fissi)
+```
+
+Esempi (solo l'arena del VAE, senza modelli e cache):
+
+| Durata | RAM VAE |
+|---|---|
+| 10 s | ~2.8 GB |
+| 20 s | ~5.2 GB |
+| 30 s | ~7.5 GB |
+| 60 s | ~14.5 GB |
+| 4 min | ~59 GB ❌ (crash anche su 16 GB) |
+
+Per questo motivo `meetingrec` **spezzetta automaticamente l'audio in chunk**
+prima di passarlo al modello (vedi sotto).
+
+### Durata dei chunk (`--vibeasr-chunk`)
+
+Default: **20 secondi** (sicuro per PC con 16 GB). Ogni chunk viene trascritto
+separatamente e i risultati vengono uniti; tra un chunk e l'altro c'è una
+sovrapposizione di 2 s per non tagliare le parole.
+
+```bash
+meetingrec transcribe --input riunione.wav --vibeasr-chunk 20   # default
+meetingrec transcribe --input riunione.wav --vibeasr-chunk 15   # PC con poca RAM
+meetingrec transcribe --input riunione.wav --vibeasr-chunk 40   # RAM abbondante (32 GB)
+```
+
+Oppure in `meetingrec.json`: `"vibeasr_chunk_sec": 20`
+Oppure dal menu: **Configurazione → 14) Durata chunk**.
+
+### Contesto LM (`--vibeasr-ctx`)
+
+È la dimensione della KV-cache del modello linguistico (default **8192** token).
+Ridurlo abbassa ulteriormente la RAM:
+
+```bash
+meetingrec transcribe --input riunione.wav --vibeasr-ctx 4096   # ~600 MB di cache
+```
+
+> Regola pratica: per un meeting da 4 minuti il default (chunk 20 s + ctx 8192)
+> occupa ~8.5 GB totali e gira bene su 16 GB. Se il PC è da 8 GB, usa
+> `--vibeasr-chunk 15 --vibeasr-ctx 4096`.
+
+### Dimensioni consigliate per RAM del PC
+
+| RAM PC | chunk | ctx |
+|---|---|---|
+| 8 GB | 15 s | 4096 |
+| 16 GB | 20 s | 8192 |
+| 32 GB+ | 30–40 s | 8192–16384 |
+
+---
+
 ## 6. Endpoint HTTP alternativi
 
 Modalità `openai` (multipart, contratto Whisper) e `raw` (body audio):
@@ -247,6 +313,8 @@ meetingrec transcribe --input riunione.wav --language it
 | `VIBEASR_THREADS` | `--vibeasr-threads` | thread |
 | `VIBEASR_CONTEXT` | `--vibeasr-context` | hotwords |
 | `VIBEASR_FORMAT` | `--vibeasr-format` | `json` / `text` |
+| `VIBEASR_CTX` | `--vibeasr-ctx` | contesto LM (KV-cache, default 8192) |
+| `VIBEASR_CHUNK` | `--vibeasr-chunk` | durata chunk in secondi (default 20) |
 
 ---
 
@@ -333,6 +401,8 @@ meeting-recorder/
 | `Modello GGUF non trovato` | Esegui `scripts/setup_vibeasr.sh` / `.bat` |
 | `asr_infer non trovato` | Compila VibeASR.cpp oppure imposta `VIBEASR_BIN` con il percorso completo |
 | Trascrizione lenta | Aumenta `VIBEASR_THREADS` (prova 6-8) |
+| **Crash `GGML_ASSERT(ctx->mem_buffer != NULL)`** | RAM insufficiente: riduci la durata chunk (`--vibeasr-chunk 15`) o il contesto (`--vibeasr-ctx 4096`); chiudi altri programmi |
+| La trascrizione è a pezzi senza continuità | È normale: l'audio lungo viene trascritto a chunk da 20 s (vedi sezione 5bis). Aumenta `--vibeasr-chunk` se hai RAM |
 | Su Linux non sento l'audio di sistema | Seleziona il dispositivo `monitor` con `--device N` |
 | La minuta non separa i relatori | Il modello CPU 1.5B produce testo puro; usa il 7B con `VIBEASR_FORMAT=json` |
 | Testo con caratteri strani su console Windows | Usa Windows Terminal (consigliato) oppure `chcp 65001` |
