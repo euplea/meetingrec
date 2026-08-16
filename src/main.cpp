@@ -19,6 +19,8 @@ namespace {
 
 Config g_cfg;  // configurazione globale (meetingrec.json)
 
+const char* kVersion = "1.1.0";
+
 std::string getEnv(const char* name) {
     const char* v = std::getenv(name);
     return v ? v : "";
@@ -92,6 +94,7 @@ void usage() {
     std::cout
         << "\n"
         << "Uso:\n"
+        << "  meetingrec --version   (stampa la versione)\n"
         << "  meetingrec list\n"
         << "  meetingrec record  [--device N] [--output file.wav] [--duration SEC] [--rate HZ] [--channels N]\n"
         << "  meetingrec transcribe --input file.wav [--output file.txt] [--api-url URL]\n"
@@ -510,7 +513,10 @@ int main(int argc, char** argv) {
     int rc = 0;
 
     try {
-        if (args.empty() && tui::isDoubleClicked()) {
+        if (hasArg(args, "--version") || hasArg(args, "-V")) {
+            std::cout << "meetingrec " << kVersion << "\n";
+            rc = 0;
+        } else if (args.empty() && tui::isDoubleClicked()) {
             // Doppio clic senza argomenti: menu interattivo.
             rc = interactiveMenu();
         } else if (args.empty() || hasArg(args, "-h") || hasArg(args, "--help")) {

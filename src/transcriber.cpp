@@ -250,7 +250,7 @@ bool transcribeHttp(const TranscribeOptions& opts, std::string& textOut,
     const bool https = (uc.nScheme == INTERNET_SCHEME_HTTPS);
 
     // 4) Effettua la richiesta.
-    HINTERNET hSession = WinHttpOpen(L"meetingrec/1.0", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+    HINTERNET hSession = WinHttpOpen(L"meetingrec/1.1.0", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
                                      WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (!hSession) {
         error = "WinHttpOpen fallito (0x" + std::to_string(GetLastError()) + ")";
