@@ -21,7 +21,7 @@ namespace {
 
 Config g_cfg;  // configurazione globale (meetingrec.json)
 
-const char* kVersion = "2026.08.7";  // schema AAAA.MM.nn
+const char* kVersion = "2026.08.8";  // schema AAAA.MM.nn
 
 int cmdConvert(const std::vector<std::string>& args);  // definita più avanti
 int cmdSetup();  // definita più avanti
