@@ -1,6 +1,7 @@
 #include "transcriber.h"
 
 #include "audio_convert.h"
+#include "tui.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -245,45 +246,80 @@ bool transcribeVibeAsr(const TranscribeOptions& opts, std::string& textOut,
         }
     }
 
-    std::string cmd = quoteArg(bin) +
-                      " --vae-model " + quoteArg(opts.vibeasrVaeModel) +
-                      " --lm-model " + quoteArg(opts.vibeasrLmModel) +
-                      " --audio " + quoteArg(audioPath) +
-                      " -t " + std::to_string(opts.vibeasrThreads) +
-                      " -c " + std::to_string(opts.vibeasrCtx > 0 ? opts.vibeasrCtx : 8192) +
-                      " --prompt-format " + format + " --greedy";
-    if (!opts.vibeasrContext.empty()) cmd += " --context " + quoteArg(opts.vibeasrContext);
+    // Esegue asr_infer su un singolo file audio.
+    const auto runOne = [&](const std::string& audio, std::string& out, std::string& errOut,
+                            int& exitCode) {
+        std::string cmd = quoteArg(bin) +
+                          " --vae-model " + quoteArg(opts.vibeasrVaeModel) +
+                          " --lm-model " + quoteArg(opts.vibeasrLmModel) +
+                          " --audio " + quoteArg(audio) +
+                          " -t " + std::to_string(opts.vibeasrThreads) +
+                          " -c " + std::to_string(opts.vibeasrCtx > 0 ? opts.vibeasrCtx : 8192) +
+                          " --prompt-format " + format + " --greedy";
+        if (!opts.vibeasrContext.empty()) cmd += " --context " + quoteArg(opts.vibeasrContext);
+        const std::string stderrFile = audio + ".asr.log";
+        return runCommandCapture(cmd, stderrFile, out, errOut, exitCode);
+    };
 
-    const std::string stderrFile = opts.inputPath + ".asr.log";
-    std::string out, errOut;
-    int exitCode = -1;
-    if (!runCommandCapture(cmd, stderrFile, out, errOut, exitCode)) {
-        error = "Impossibile eseguire il processo '" + bin + "' (verifica che sia nel PATH)";
-        return false;
-    }
-    if (exitCode != 0) {
-        const std::string tail = errOut.size() > 400 ? errOut.substr(errOut.size() - 400) : errOut;
-        error = "asr_infer terminato con codice " + std::to_string(exitCode) + ":\n" + tail;
-        // Suggerimento mirato in caso di problemi di memoria (GGML_ASSERT/malloc).
-        if (errOut.find("GGML_ASSERT") != std::string::npos ||
-            errOut.find("mem_buffer") != std::string::npos ||
-            errOut.find("out of memory") != std::string::npos) {
-            error += "\nPossibile memoria RAM insufficiente.\n"
-                     "Suggerimenti:\n"
-                     "  - chiudi altri programmi (l'inferenza serve 4-8 GB liberi)\n"
-                     "  - riduci il contesto LM: --vibeasr-ctx 4096 (o in meetingrec.json 'vibeasr_ctx')\n"
-                     "  - per riunioni lunghe aumenta invece il valore (es. 16384)\n";
+    const int chunkSec = opts.vibeasrChunkSec > 0 ? opts.vibeasrChunkSec : 30;
+    const double duration = wavDurationSeconds(audioPath);
+
+    // Se l'audio è più lungo del chunk, spezzalo: la memoria del VAE di
+    // VibeASR-1.5B scala con la durata (~230 MB/s), quindi i pezzi lunghi
+    // esplodono in RAM anche su macchine con 16 GB.
+    std::vector<std::string> chunkFiles;
+    if (duration > chunkSec) {
+        std::string splitErr;
+        if (!splitWavIntoChunks(audioPath, chunkSec, 2.0, chunkFiles, splitErr)) {
+            error = "Impossibile spezzare l'audio: " + splitErr;
+            if (!tempWav.empty()) std::remove(tempWav.c_str());
+            return false;
         }
-        return false;
+        tui::info("Audio lungo " + std::to_string(static_cast<int>(duration)) +
+                  " s: trascrizione a pezzi da " + std::to_string(chunkSec) + " s (" +
+                  std::to_string(chunkFiles.size()) + " chunk).");
+    } else {
+        chunkFiles.push_back(audioPath);
     }
 
-    textOut = trim(out);
+    std::string combined;
+    for (size_t i = 0; i < chunkFiles.size(); ++i) {
+        std::string out, errOut;
+        int exitCode = -1;
+        if (!runOne(chunkFiles[i], out, errOut, exitCode)) {
+            error = "Impossibile eseguire il processo '" + bin + "' (verifica che sia nel PATH)";
+            for (auto& c : chunkFiles) if (c != audioPath) std::remove(c.c_str());
+            if (!tempWav.empty()) std::remove(tempWav.c_str());
+            return false;
+        }
+        if (exitCode != 0) {
+            const std::string tail = errOut.size() > 400 ? errOut.substr(errOut.size() - 400) : errOut;
+            error = "asr_infer terminato con codice " + std::to_string(exitCode) + ":\n" + tail;
+            if (errOut.find("GGML_ASSERT") != std::string::npos ||
+                errOut.find("mem_buffer") != std::string::npos ||
+                errOut.find("out of memory") != std::string::npos) {
+                error += "\nMemoria insufficiente per il chunk.\n"
+                         "Suggerimenti:\n"
+                         "  - riduci la durata del chunk: --vibeasr-chunk 15 (o 'vibeasr_chunk_sec' in meetingrec.json)\n"
+                         "  - chiudi altri programmi\n";
+            }
+            for (auto& c : chunkFiles) if (c != audioPath) std::remove(c.c_str());
+            if (!tempWav.empty()) std::remove(tempWav.c_str());
+            return false;
+        }
+        if (!combined.empty()) combined += " ";
+        combined += trim(out);
+    }
+
+    // Pulizia dei file temporanei.
+    for (auto& c : chunkFiles) if (c != audioPath) std::remove(c.c_str());
+    if (!tempWav.empty()) std::remove(tempWav.c_str());
+
+    textOut = trim(combined);
     if (textOut.empty()) {
         error = "Nessun testo prodotto da asr_infer";
-        if (!tempWav.empty()) std::remove(tempWav.c_str());
         return false;
     }
-    if (!tempWav.empty()) std::remove(tempWav.c_str());
     return true;
 }
 
@@ -358,7 +394,7 @@ bool transcribeHttp(const TranscribeOptions& opts, std::string& textOut,
     const bool https = (uc.nScheme == INTERNET_SCHEME_HTTPS);
 
     // 4) Effettua la richiesta.
-    HINTERNET hSession = WinHttpOpen(L"meetingrec/2026.08.4", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+    HINTERNET hSession = WinHttpOpen(L"meetingrec/2026.08.6", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
                                      WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (!hSession) {
         error = "WinHttpOpen fallito (0x" + std::to_string(GetLastError()) + ")";

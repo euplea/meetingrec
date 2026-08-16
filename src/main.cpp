@@ -21,7 +21,7 @@ namespace {
 
 Config g_cfg;  // configurazione globale (meetingrec.json)
 
-const char* kVersion = "2026.08.4";  // schema AAAA.MM.nn
+const char* kVersion = "2026.08.6";  // schema AAAA.MM.nn
 
 int cmdConvert(const std::vector<std::string>& args);  // definita più avanti
 int cmdSetup();  // definita più avanti
@@ -109,6 +109,7 @@ void usage() {
         << "                      [--vibeasr-bin PATH] [--vibeasr-vae F.gguf] [--vibeasr-lm F.gguf]\n"
         << "                      [--vibeasr-threads N] [--vibeasr-context TEXT] [--vibeasr-format text|json]\n"
         << "                      [--vibeasr-ctx N]  (contesto LM, default 8192; riduci a 4096 se RAM scarsa)\n"
+        << "                      [--vibeasr-chunk SEC] (durata chunk, default 30; la RAM VAE scala con l'audio)\n"
         << "  meetingrec minutes  --transcript file.txt [--output minuta.md|minuta.odt]\n"
         << "                      [--title T] [--attendees A,B] [--date YYYY-MM-DD] [--format md|odt]\n"
         << "  meetingrec download-models [--dir PATH] [--vae-only | --lm-only]\n"
@@ -142,6 +143,8 @@ void fillVibeasrOptions(TranscribeOptions& o, const std::vector<std::string>& ar
         pick(args, "--vibeasr-format", "VIBEASR_FORMAT", g_cfg.vibeasrFormat, "json");
     o.vibeasrCtx =
         pickInt(args, "--vibeasr-ctx", "VIBEASR_CTX", g_cfg.vibeasrCtx, 8192);
+    o.vibeasrChunkSec =
+        pickInt(args, "--vibeasr-chunk", "VIBEASR_CHUNK", g_cfg.vibeasrChunkSec, 20);
 }
 
 void fillTranscribeCommon(TranscribeOptions& o, const std::vector<std::string>& args) {
@@ -465,8 +468,10 @@ int settingsMenu() {
             << "  10) Lingua                       [" << g_cfg.language << "]\n"
             << "  11) Cartella output              [" << g_cfg.outputDir << "]\n"
             << "  12) Titolo minuta                [" << g_cfg.title << "]\n"
-            << "  13) Salva su " << g_cfg.path << "\n"
-            << "  14) Torna al menu principale\n"
+            << "  13) Contesto LM (tokens)         [" << g_cfg.vibeasrCtx << "]\n"
+            << "  14) Durata chunk (secondi)       [" << g_cfg.vibeasrChunkSec << "]\n"
+            << "  15) Salva su " << g_cfg.path << "\n"
+            << "  16) Torna al menu principale\n"
             << "Scelta: " << std::flush;
 
         std::string line, v;
@@ -488,10 +493,20 @@ int settingsMenu() {
         else if (line == "11") { if (promptValue("Cartella output", g_cfg.outputDir, v)) g_cfg.outputDir = v; }
         else if (line == "12") { if (promptValue("Titolo minuta", g_cfg.title, v)) g_cfg.title = v; }
         else if (line == "13") {
+            std::cout << "Contesto LM [" << g_cfg.vibeasrCtx << "]: " << std::flush;
+            std::getline(std::cin, v);
+            if (!v.empty()) g_cfg.vibeasrCtx = toInt(v, g_cfg.vibeasrCtx);
+        }
+        else if (line == "14") {
+            std::cout << "Durata chunk [" << g_cfg.vibeasrChunkSec << "]: " << std::flush;
+            std::getline(std::cin, v);
+            if (!v.empty()) g_cfg.vibeasrChunkSec = toInt(v, g_cfg.vibeasrChunkSec);
+        }
+        else if (line == "15") {
             if (g_cfg.save()) tui::ok("Configurazione salvata in " + g_cfg.path);
             else tui::error("Impossibile salvare " + g_cfg.path);
         }
-        else if (line == "14" || line.empty()) return 0;
+        else if (line == "16" || line.empty()) return 0;
         else tui::warn("Scelta non valida.");
     }
 }

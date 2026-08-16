@@ -172,6 +172,82 @@ bool convertWithFfmpeg(const std::string& input, const std::string& output, int 
 
 }  // namespace
 
+double wavDurationSeconds(const std::string& wavPath) {
+    drwav w;
+    if (!drwav_init_file(&w, wavPath.c_str(), nullptr)) return -1.0;
+    const double dur = w.totalPCMFrameCount > 0 && w.sampleRate > 0
+                           ? static_cast<double>(w.totalPCMFrameCount) / w.sampleRate
+                           : -1.0;
+    drwav_uninit(&w);
+    return dur;
+}
+
+bool splitWavIntoChunks(const std::string& wavPath, double chunkSeconds,
+                        double overlapSeconds, std::vector<std::string>& chunkPaths,
+                        std::string& error) {
+    chunkPaths.clear();
+
+    unsigned int ch = 0, rate = 0;
+    drwav_uint64 frames = 0;
+    float* pcm = drwav_open_file_and_read_pcm_frames_f32(wavPath.c_str(), &ch, &rate, &frames, nullptr);
+    if (!pcm) {
+        error = "Impossibile leggere " + wavPath;
+        return false;
+    }
+    if (frames == 0) {
+        drwav_free(pcm, nullptr);
+        error = "Audio vuoto: " + wavPath;
+        return false;
+    }
+
+    // Downmix mono + resample a 16 kHz.
+    const uint32_t srcRate = rate, srcCh = ch;
+    const uint64_t outFrames =
+        static_cast<uint64_t>((static_cast<double>(frames) * 16000.0) / srcRate) + 1;
+    std::vector<int16_t> mono;
+    mono.reserve(outFrames);
+    for (uint64_t i = 0; i < outFrames; ++i) {
+        const double pos = static_cast<double>(i) * srcRate / 16000.0;
+        const uint64_t i0 = static_cast<uint64_t>(pos);
+        const uint64_t i1 = std::min<uint64_t>(i0 + 1, frames - 1);
+        const float frac = static_cast<float>(pos - i0);
+        float s0 = 0.0f, s1 = 0.0f;
+        for (uint32_t c = 0; c < srcCh; ++c) {
+            s0 += pcm[i0 * srcCh + c];
+            s1 += pcm[i1 * srcCh + c];
+        }
+        const float v = clampf((s0 * (1.0f - frac) + s1 * frac) / static_cast<float>(srcCh));
+        mono.push_back(static_cast<int16_t>(v * 32767.0f));
+    }
+    drwav_free(pcm, nullptr);
+
+    const uint64_t chunkFrames = static_cast<uint64_t>(chunkSeconds * 16000.0);
+    const uint64_t overlapFrames = static_cast<uint64_t>(overlapSeconds * 16000.0);
+    if (chunkFrames == 0) {
+        error = "chunkSeconds troppo piccolo";
+        return false;
+    }
+
+    uint64_t start = 0;
+    int idx = 0;
+    while (start < mono.size()) {
+        const uint64_t end = std::min<uint64_t>(start + chunkFrames, mono.size());
+        const std::string p = wavPath + ".chunk" + std::to_string(idx) + ".wav";
+        WavWriter w;
+        if (!w.open(p, 16000, 1, 16)) {
+            error = "Impossibile scrivere " + p;
+            return false;
+        }
+        w.write(&mono[start], static_cast<size_t>(end - start) * sizeof(int16_t));
+        w.close();
+        chunkPaths.push_back(p);
+        if (end >= mono.size()) break;
+        start = end > overlapFrames ? end - overlapFrames : end;
+        ++idx;
+    }
+    return !chunkPaths.empty();
+}
+
 bool convertAudio(const std::string& input, const std::string& output, int targetRate,
                   int targetChannels, std::string& error) {
     const std::string extOut = extension(output);

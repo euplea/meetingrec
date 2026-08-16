@@ -256,6 +256,7 @@ bool Config::load() {
     vibeasrContext = root.getString("vibeasr_context", vibeasrContext);
     vibeasrFormat = root.getString("vibeasr_format", vibeasrFormat);
     vibeasrCtx = static_cast<int>(root.getNumber("vibeasr_ctx", vibeasrCtx));
+    vibeasrChunkSec = static_cast<int>(root.getNumber("vibeasr_chunk_sec", vibeasrChunkSec));
     outputDir = root.getString("output_dir", outputDir);
     title = root.getString("title", title);
     loaded = true;
@@ -293,6 +294,12 @@ bool Config::save() const {
         x.type = j::Value::Number;
         x.num = vibeasrCtx;
         root.obj.emplace_back("vibeasr_ctx", std::move(x));
+    }
+    {
+        j::Value x;
+        x.type = j::Value::Number;
+        x.num = vibeasrChunkSec;
+        root.obj.emplace_back("vibeasr_chunk_sec", std::move(x));
     }
     put("output_dir", outputDir);
     put("title", title);

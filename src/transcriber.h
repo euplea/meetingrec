@@ -19,6 +19,7 @@ struct TranscribeOptions {
     std::string vibeasrContext;         // hotwords/contesto opzionale
     std::string vibeasrFormat = "text"; // "text" (1.5B BitNet) | "json" (7B, con relatori/tempi)
     int vibeasrCtx = 8192;               // contesto LM: riduci (es. 4096) se la RAM è scarsa
+    int vibeasrChunkSec = 20;            // durata chunk in secondi (memoria VAE scala con la durata)
 };
 
 // Sends the audio to a transcription endpoint (Whisper-compatible or a custom
