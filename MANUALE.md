@@ -19,6 +19,19 @@ riunione** in Markdown. Funziona su **Windows 10**, **Linux** e **macOS**.
 
 ---
 
+## 1bis. Avvio rapido plug and play (consigliato)
+
+Scarica l'eseguibile dalla [GitHub Release](https://github.com/euplea/meetingrec/releases)
+e fai **doppio clic**:
+
+1. si apre Windows Terminal con il menu
+2. se mancano `asr_infer` o i modelli GGUF, il tool li **scarica in automatico**
+   (binario precompilato dalla release + modelli ~1.7 GB da HuggingFace)
+3. scegli **4) Pipeline completa** e la minuta è pronta
+
+Da riga di comando: `meetingrec setup` esegue lo stesso download automatico.
+La versione usa lo schema **AAAA.MM.nn** (es. `2026.08.1`).
+
 ## 2. Compilazione
 
 ### 2.1 Windows — Visual Studio + vcpkg

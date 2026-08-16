@@ -4,7 +4,11 @@ Strumento C++ per registrare **l'audio riprodotto dal sistema** (la voce che esc
 Microsoft Teams, Zoom, Google Meet, ecc.), trascriverlo e generare automaticamente una
 **minuta di riunione** in Markdown.
 
-Funziona su **Windows 10**, **Linux** e **macOS**. Tutte le impostazioni
+Funziona su **Windows 10**, **Linux** e **macOS**.
+**Plug and play:** doppio clic sull'eseguibile → Windows Terminal + menu; se mancano
+`asr_infer` o i modelli GGUF vengono **scaricati in automatico** (comando `setup`,
+binario `asr_infer` precompilato incluso nella release).
+Versione con schema **AAAA.MM.nn** (anno.mese.rilascio). Tutte le impostazioni
 sono configurabili via **flag**, **variabili d'ambiente** o file **`meetingrec.json`**
 (menu interattivo con doppio clic: 3 passi singoli + pipeline completa + sotto-menu
 Configurazione).
